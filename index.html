@@ -793,7 +793,7 @@ window.sendMsg=async(id,asAdmin)=>{
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
   if(asAdmin&&!can('support'))return toast('Keine Berechtigung für Support-Anfragen.');
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
-  if(asAdmin&&text.trim().toLowerCase().startsWith('/passwort')){if(!can('passwordSupport'))return toast('Keine Berechtigung für Passwort-Anfragen.');const t=await DB.get('tickets',id);if(!t?.userEmail)return toast('Keine E-Mail-Adresse hinterlegt.');try{await sendPasswordResetEmail(auth,t.userEmail);await DB.addMsg(id,{from:'scout',senderName:S.user.name+' (Medienscout)',text:'Ich habe eine sichere E-Mail zum Zurücksetzen deines Passworts angefordert. Bitte prüfe dein Schulpostfach und folge dem Link. Teile dein Passwort niemals im Chat.',internal:false,ts:now});await logActivity('Passwort-Reset angefordert',t.userEmail);$('#s-c-msg').value='';toast('Reset-Link wurde per E-Mail angefordert.');return}catch(e){return toast('Fehler: '+e.code)}}
+  if(asAdmin&&text.trim().toLowerCase().startsWith('/passwort')){if(!extOn())return toast('Die Erweiterungen sind deaktiviert.');if(!can('passwordSupport'))return toast('Keine Berechtigung für Passwort-Anfragen.');const t=await DB.get('tickets',id);if(!t?.userEmail)return toast('Keine E-Mail-Adresse hinterlegt.');try{await sendPasswordResetEmail(auth,t.userEmail);await DB.addMsg(id,{from:'scout',senderName:S.user.name+' (Medienscout)',text:'Ich habe eine sichere E-Mail zum Zurücksetzen deines Passworts angefordert. Bitte prüfe dein Schulpostfach und folge dem Link. Teile dein Passwort niemals im Chat.',internal:false,ts:now});await logActivity('Passwort-Reset angefordert',t.userEmail);$('#s-c-msg').value='';toast('Reset-Link wurde per E-Mail angefordert.');return}catch(e){return toast('Fehler: '+e.code)}}
   await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(isAdmin()?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(isAdmin()?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now});
   if(!isInternal){
     await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
@@ -841,12 +841,13 @@ const toggleRow=(k,l,d)=>`<div class="glass p-4 flex items-center justify-betwee
   </button>
 </div>`;
 
-window.setSet=async(k,v)=>{await DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});await logActivity('Einstellung geändert',k+' = '+v)};
+window.setSet=async(k,v)=>{if(k==='extensionsEnabled'&&!isAdmin())return toast('Nur Admins dürfen Erweiterungen aktivieren.');if(!can('settings')&&k!=='extensionsEnabled')return toast('Keine Berechtigung für Einstellungen.');await DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});await logActivity('Einstellung geändert',k+' = '+v)};
 window.saveBrand=async()=>{
   if(!can('settings'))return toast('Keine Berechtigung.');await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
   toast('Texte gespeichert.');
 };
 window.uploadAsset=async(inp,key,max)=>{
+  if(!can('settings'))return toast('Keine Berechtigung für Einstellungen.');
   if(!inp.files[0])return;
   const data=await compress(inp.files[0],max,0.8);
   await setSet(key,data);
