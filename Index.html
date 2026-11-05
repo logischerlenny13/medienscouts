@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Medienscouts</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class'}</script>
+<script src="https://unpkg.com/lucide@0.383.0"></script>
+<style type="text/tailwindcss">
+.glass{@apply bg-white/70 dark:bg-indigo-950/40 backdrop-blur-xl border border-slate-300/50 dark:border-white/10 rounded-2xl shadow-lg}
+.inp{@apply w-full rounded-xl px-3 py-2 bg-white/70 dark:bg-white/10 border border-slate-300/60 dark:border-white/15 outline-none focus:ring-2 ring-violet-500 text-sm}
+.btn{@apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition disabled:opacity-50}
+.btn2{@apply inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-500/20 hover:bg-slate-500/30 text-xs font-medium}
+.tab{@apply px-3 py-2 rounded-xl text-sm font-medium hover:bg-violet-500/20}
+.tab.on{@apply bg-violet-600 text-white}
+.prose p{margin:.6rem 0}.prose h3{font-weight:700;font-size:1.1rem;margin-top:1rem}.prose ul{list-style:disc;padding-left:1.4rem}
+</style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-100 via-violet-100 to-sky-100 dark:from-slate-950 dark:via-indigo-950 dark:to-slate-900 text-slate-800 dark:text-slate-100">
+<div id="app"></div><div id="modal"></div><div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100]"></div>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
+const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
+
+// ---------- Datenschicht (nur Firestore, kein Storage) ----------
+const DB={
+  watch:(col,cb,order)=>onSnapshot(order?query(collection(db,col),orderBy(order,'desc')):collection(db,col),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
+  add:(col,d)=>addDoc(collection(db,col),d), set:(col,id,d)=>setDoc(doc(db,col,id),d), upd:(col,id,d)=>updateDoc(doc(db,col,id),d),
+  del:(col,id)=>deleteDoc(doc(db,col,id)), get:async(col,id)=>{const s=await getDoc(doc(db,col,id));return s.exists()?{id:s.id,...s.data()}:null},
+  msgs:(code,cb)=>onSnapshot(query(collection(db,'tickets',code,'messages'),orderBy('ts')),s=>cb(s.docs.map(d=>d.data()))),
+  addMsg:(code,m)=>addDoc(collection(db,'tickets',code,'messages'),m)
+};
+
+const S={settings:{tickets:true,apps:true},needSetup:false,videos:[],articles:[],tickets:[],apps:[],users:[],user:null,login:false,tab:'settings',q:'',cat:'Alle',edit:null,open:null,adminUnsubs:[]};
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=(t)=>{$('#toast').innerHTML=`<div class="glass px-4 py-2 text-sm">${esc(t)}</div>`;setTimeout(()=>$('#toast').innerHTML='',3000)};
+const icons=()=>lucide.createIcons();
+const val=id=>$('#'+id)?.value.trim()||'';
+const fmt=ts=>new Date(ts).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'});
+const ytId=u=>{const m=u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/);return m?m[1]:/^[\w-]{11}$/.test(u)?u:null};
+const CATS=['Cybermobbing','Datenschutz','Passwörter & Sicherheit','Social Media','Sonstiges'];
+const compress=f=>new Promise((res,rej)=>{const r=new FileReader();r.onerror=rej;r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,900/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.7))};i.onerror=rej;i.src=r.result};r.readAsDataURL(f)});
+const fmtArticle=t=>t.split(/\n\s*\n/).map(b=>{const l=b.split('\n');if(l.every(x=>/^[-*] /.test(x)))return'<ul>'+l.map(x=>`<li>${esc(x.slice(2))}</li>`).join('')+'</ul>';if(/^## /.test(b))return`<h3>${esc(b.slice(3))}</h3>`;return`<p>${esc(b).replace(/\n/g,'<br>')}</p>`}).join('');
+
+// ---------- Live-Abos (öffentlich) ----------
+onSnapshot(doc(db,'settings','main'),s=>{S.needSetup=!s.exists()||!s.data().setupDone;if(s.exists())S.settings={tickets:true,apps:true,...s.data()};render()},()=>render());
+DB.watch('videos',d=>{S.videos=d;render()},'createdAt');
+DB.watch('articles',d=>{S.articles=d;render()},'createdAt');
+onAuthStateChanged(auth,async u=>{
+  S.adminUnsubs.forEach(f=>f());S.adminUnsubs=[];
+  if(!u){S.user=null;render();return}
+  const p=await DB.get('users',u.uid);
+  if(!p){await signOut(auth);toast('Kein Medienscout-Zugang für dieses Konto.');return}
+  S.user={uid:u.uid,...p};S.login=false;
+  const w=(c,k,o)=>S.adminUnsubs.push(DB.watch(c,d=>{S[k]=d;render()},o));
+  w('tickets','tickets','updatedAt');w('applications','apps','createdAt');w('users','users');
+  render();
+});
+
+// ---------- Rendering ----------
+function render(){
+  const ae=document.activeElement;if(ae&&ae.tagName!='BODY'&&ae.closest('#app')&&['INPUT','TEXTAREA'].includes(ae.tagName)&&!ae.id.startsWith('s-'))return;
+  $('#app').innerHTML=S.user?adminView():publicView();
+  if(S.login)loginModal();else if(!S.open)$('#modal').innerHTML='';
+  icons();
+}
+const banner=t=>`<div class="glass p-6 flex items-center gap-3 text-amber-500"><i data-lucide="palmtree"></i><span class="font-medium">${t}</span></div>`;
+const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none"><div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
+<a href="#" class="font-bold text-lg flex items-center gap-2"><i data-lucide="shield-check" class="text-violet-500"></i>Medienscouts</a>
+<nav class="hidden md:flex gap-4 text-sm ml-4">${!S.user?['videos:Videos','artikel:Artikel','support:Support','bewerbung:Bewerbung'].map(x=>{const[a,b]=x.split(':');return`<a class="hover:text-violet-500" href="#${a}">${b}</a>`}).join(''):''}</nav>
+<div class="ml-auto flex gap-2"><button class="btn2" onclick="document.documentElement.classList.toggle('dark')"><i data-lucide="sun-moon" class="w-4 h-4"></i></button>
+${S.user?`<span class="hidden sm:block text-sm self-center">${esc(S.user.name)}</span><button class="btn2" onclick="logout()"><i data-lucide="log-out" class="w-4 h-4"></i>Logout</button>`:`<button class="btn" onclick="S.login=true;render()"><i data-lucide="lock" class="w-4 h-4"></i>Scouts Login</button>`}</div></div></header>`;
+
+function publicView(){
+  return nav()+`<main class="max-w-6xl mx-auto px-4 py-8 space-y-14">
+<section class="text-center py-8"><h1 class="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-violet-500 to-sky-400 bg-clip-text text-transparent">Wir sind die Medienscouts</h1><p class="mt-3 opacity-80">Tipps, Anleitungen und Hilfe rund um Internet, Social Media und Sicherheit – von Schülern für Schüler.</p></section>
+<section id="videos"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="youtube" class="text-red-500"></i>Videothek</h2><div class="grid md:grid-cols-2 gap-5">
+${S.videos.map(v=>`<div class="glass overflow-hidden"><div class="aspect-video"><iframe class="w-full h-full" src="https://www.youtube.com/embed/${esc(v.vid)}" allowfullscreen loading="lazy"></iframe></div><div class="p-4"><h3 class="font-semibold">${esc(v.title)}</h3><p class="text-sm opacity-75 mt-1">${esc(v.desc)}</p></div></div>`).join('')||'<p class="opacity-60">Noch keine Videos.</p>'}</div></section>
+<section id="artikel"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="book-open" class="text-sky-500"></i>Artikel &amp; Anleitungen</h2>
+<div class="flex flex-wrap gap-2 mb-4"><input id="s-q" class="inp !w-64" placeholder="Suchen…" value="${esc(S.q)}" oninput="S.q=this.value;grid()">
+<div class="flex flex-wrap gap-2">${['Alle',...CATS].map(c=>`<button class="tab ${S.cat==c?'on':''}" onclick="S.cat='${c}';render()">${c}</button>`).join('')}</div></div><div id="grid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">${artGrid()}</div></section>
+<section id="support"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="life-buoy" class="text-emerald-500"></i>Kummerkasten &amp; Hilfe</h2>
+${S.settings.tickets?`<div class="grid md:grid-cols-2 gap-5"><div class="glass p-5 space-y-3"><h3 class="font-semibold">Neues anonymes Ticket</h3>
+<select id="t-cat" class="inp">${CATS.map(c=>`<option>${c}</option>`).join('')}</select><textarea id="t-msg" rows="5" class="inp" placeholder="Was ist passiert? Du bleibst anonym."></textarea>
+<div id="t-prev"></div><div class="flex gap-2"><label class="btn2 cursor-pointer"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,'t-prev')"></label><button class="btn" onclick="createTicket()"><i data-lucide="send" class="w-4 h-4"></i>Absenden</button></div></div>
+<div class="glass p-5 space-y-3"><h3 class="font-semibold">Ticket-Status prüfen</h3><p class="text-sm opacity-75">Gib deinen Code ein (z. B. MS-4829).</p><input id="t-code" class="inp uppercase" placeholder="MS-0000"><button class="btn" onclick="openChat(val('t-code').toUpperCase(),false)"><i data-lucide="message-circle" class="w-4 h-4"></i>Zum Chat</button></div></div>`
+:banner('Support aktuell in den Ferien / geschlossen.')}</section>
+<section id="bewerbung"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="user-plus" class="text-pink-500"></i>Werde Medienscout</h2>
+${S.settings.apps?`<div class="glass p-5 grid md:grid-cols-2 gap-3 max-w-3xl"><input id="a-name" class="inp" placeholder="Name"><input id="a-class" class="inp" placeholder="Klasse"><textarea id="a-mot" rows="4" class="inp md:col-span-2" placeholder="Warum möchtest du Medienscout werden?"></textarea><button class="btn w-fit" onclick="sendApp()"><i data-lucide="send" class="w-4 h-4"></i>Bewerben</button></div>`:banner('Die Bewerbungsphase ist aktuell geschlossen.')}</section>
+</main><footer class="text-center text-xs opacity-60 py-8">Medienscouts · Schulprojekt</footer>`;
+}
+const artGrid=()=>{const q=S.q.toLowerCase();const l=S.articles.filter(a=>(S.cat=='Alle'||a.cat==S.cat)&&(a.title+a.body).toLowerCase().includes(q));
+  return l.map(a=>`<button onclick="openArt('${a.id}')" class="glass p-4 text-left hover:scale-[1.02] transition"><span class="text-xs px-2 py-0.5 rounded-full bg-violet-500/20">${esc(a.cat)}</span><h3 class="font-semibold mt-2">${esc(a.title)}</h3><p class="text-sm opacity-70 mt-1 line-clamp-3">${esc(a.body.slice(0,140))}…</p></button>`).join('')||'<p class="opacity-60">Keine Artikel gefunden.</p>'};
+window.grid=()=>{$('#grid').innerHTML=artGrid()};
+
+// ---------- Modals ----------
+const modal=h=>{$('#modal').innerHTML=`<div class="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 w-full max-w-2xl max-h-[90vh] overflow-auto p-6 relative"><button class="absolute top-3 right-3 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>${h}</div></div>`;icons()};
+let unsubMsg=null;
+window.closeModal=()=>{S.login=false;S.open=null;unsubMsg&&unsubMsg();unsubMsg=null;$('#modal').innerHTML=''};
+window.openArt=id=>{const a=S.articles.find(x=>x.id==id);S.open='art';modal(`<span class="text-xs px-2 py-0.5 rounded-full bg-violet-500/20">${esc(a.cat)}</span><h2 class="text-2xl font-bold mt-2">${esc(a.title)}</h2><div class="prose mt-3">${fmtArticle(a.body)}</div>`)};
+function loginModal(){modal(`<h2 class="text-xl font-bold mb-4 flex gap-2"><i data-lucide="lock"></i>Scouts Login</h2><div class="space-y-3"><input id="l-mail" type="email" class="inp" placeholder="E-Mail" value="${S.needSetup?'admin@schule.de':''}"><input id="l-pw" type="password" class="inp" placeholder="Passwort" value="${S.needSetup?'scout123':''}" onkeydown="if(event.key=='Enter')doLogin()">
+<button class="btn" onclick="doLogin()">Anmelden</button>
+${S.needSetup?`<div class="mt-4 p-3 rounded-xl bg-amber-500/15 text-sm">Ersteinrichtung: Noch kein Admin vorhanden. Mit E-Mail &amp; Passwort oben wird der erste Admin angelegt und Demo-Daten geladen.<br><button class="btn mt-2" onclick="setup()">Ersten Admin anlegen</button></div>`:''}</div>`)}
+window.doLogin=async()=>{try{await signInWithEmailAndPassword(auth,val('l-mail'),val('l-pw'))}catch(e){toast('Login fehlgeschlagen')}};
+window.logout=()=>signOut(auth);
+
+// ---------- Support-Chat ----------
+let pendingImg={};
+window.pick=async(inp,prev)=>{if(!inp.files[0])return;pendingImg[prev]=await compress(inp.files[0]);$('#'+prev).innerHTML=`<img src="${pendingImg[prev]}" class="h-20 rounded-lg">`;inp.value=''};
+window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[90] bg-black/90 flex items-center justify-center p-4';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full">`;document.body.appendChild(d)};
+window.createTicket=async()=>{
+  const msg=val('t-msg');if(!msg)return toast('Bitte eine Nachricht schreiben.');
+  let code;do{code='MS-'+(1000+Math.floor(Math.random()*9000))}while(await DB.get('tickets',code));
+  const now=Date.now();await DB.set('tickets',code,{category:val('t-cat'),status:'Neu',createdAt:now,updatedAt:now,unread:true});
+  await DB.addMsg(code,{from:'student',text:msg,img:pendingImg['t-prev']||null,ts:now});pendingImg={};
+  openChat(code,false,true);
+};
+const badge=s=>`<span class="text-xs px-2 py-0.5 rounded-full ${{Neu:'bg-rose-500/20 text-rose-500','In Bearbeitung':'bg-amber-500/20 text-amber-500','Gelöst':'bg-emerald-500/20 text-emerald-500'}[s]}">${s}</span>`;
+window.openChat=async(code,admin,fresh)=>{
+  const t=await DB.get('tickets',code).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
+  S.open='chat';pendingImg['c-prev']=null;
+  modal(`<div class="space-y-3">${fresh?`<div class="p-3 rounded-xl bg-emerald-500/15 text-sm">Ticket erstellt! Merke dir deinen Code: <b class="text-lg">${code}</b></div>`:''}
+  <div class="flex items-center gap-2 flex-wrap"><h2 class="text-xl font-bold">${code}</h2><span id="c-st">${badge(t.status)}</span><span class="text-sm opacity-70">${esc(t.category)}</span>
+  ${admin?`<select class="inp !w-auto ml-auto" onchange="DB_upd('${code}',this.value)">${['Neu','In Bearbeitung','Gelöst'].map(s=>`<option ${s==t.status?'selected':''}>${s}</option>`).join('')}</select>`:''}</div>
+  <div id="c-list" class="h-72 overflow-auto space-y-2 p-2 rounded-xl bg-slate-500/10"></div><div id="c-prev"></div>
+  <div class="flex gap-2"><label class="btn2 cursor-pointer"><i data-lucide="image" class="w-4 h-4"></i><input type="file" accept="image/*" hidden onchange="pick(this,'c-prev')"></label><input id="s-c-msg" class="inp" placeholder="Nachricht…" onkeydown="if(event.key=='Enter')sendMsg('${code}',${admin})"><button class="btn" onclick="sendMsg('${code}',${admin})"><i data-lucide="send" class="w-4 h-4"></i></button></div></div>`);
+  unsubMsg&&unsubMsg();unsubMsg=DB.msgs(code,ms=>{const l=$('#c-list');if(!l)return;const me=admin?'scout':'student';
+    l.innerHTML=ms.map(m=>`<div class="flex ${m.from==me?'justify-end':''}"><div class="max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.from==me?'bg-violet-600 text-white':'bg-white/80 dark:bg-white/10'}"><div class="text-[10px] opacity-70">${m.from=='scout'?'Medienscout':'Schüler'} · ${fmt(m.ts)}</div>${m.text?esc(m.text).replace(/\n/g,'<br>'):''}${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-1 rounded-lg max-h-40 cursor-zoom-in">`:''}</div></div>`).join('');l.scrollTop=l.scrollHeight});
+};
+window.DB_upd=async(code,st)=>{await DB.upd('tickets',code,{status:st,updatedAt:Date.now(),unread:false});$('#c-st').innerHTML=badge(st)};
+window.sendMsg=async(code,admin)=>{const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
+  await DB.addMsg(code,{from:admin?'scout':'student',text,img,ts:Date.now()});
+  await DB.upd('tickets',code,admin?{updatedAt:Date.now()}:{updatedAt:Date.now(),unread:true}).catch(()=>{});
+  $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML=''};
+window.sendApp=async()=>{const n=val('a-name'),c=val('a-class'),m=val('a-mot');if(!n||!c||!m)return toast('Bitte alles ausfüllen.');
+  await DB.add('applications',{name:n,klass:c,motivation:m,status:'Offen',createdAt:Date.now()});['a-name','a-class','a-mot'].forEach(i=>$('#'+i).value='');toast('Bewerbung gesendet – danke!')};
+
+// ---------- Admin ----------
+const TABS=[['settings','sliders-horizontal','Einstellungen'],['content','film','Content'],['tickets','inbox','Support-Desk'],['apps','users','Bewerbungen'],['team','key-round','Team']];
+function adminView(){
+  const nNew=S.tickets.filter(t=>t.status=='Neu').length;
+  return nav()+`<main class="max-w-6xl mx-auto px-4 py-6"><h1 class="text-2xl font-bold mb-4 flex gap-2"><i data-lucide="terminal-square" class="text-violet-500"></i>Admin-Terminal</h1>
+<div class="flex flex-wrap gap-2 mb-6">${TABS.map(([k,i,l])=>`<button class="tab ${S.tab==k?'on':''}" onclick="S.tab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline"></i> ${l}${k=='tickets'&&nNew?` (${nNew})`:''}</button>`).join('')}</div>${tabs[S.tab]()}</main>`}
+const toggle=(k,l,d)=>`<div class="glass p-5 flex items-center gap-4"><div class="flex-1"><div class="font-semibold">${l}</div><div class="text-sm opacity-70">${d}</div></div><button onclick="setSet('${k}',${!S.settings[k]})" class="w-14 h-8 rounded-full p-1 transition ${S.settings[k]?'bg-emerald-500':'bg-slate-500/50'}"><span class="block w-6 h-6 rounded-full bg-white transition ${S.settings[k]?'translate-x-6':''}"></span></button><b class="w-10 text-sm">${S.settings[k]?'AN':'AUS'}</b></div>`;
+window.setSet=(k,v)=>DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});
+const ed=S.edit;
+const tabs={
+  settings:()=>`<div class="space-y-4 max-w-2xl">${toggle('tickets','Support-Ticket-System','Schüler können Tickets erstellen')}${toggle('apps','Bewerbungsphase','Bewerbungsformular im öffentlichen Dashboard')}</div>`,
+  content:()=>{const v=S.edit?.t=='v'?S.videos.find(x=>x.id==S.edit.id):null,a=S.edit?.t=='a'?S.articles.find(x=>x.id==S.edit.id):null;
+    return`<div class="grid lg:grid-cols-2 gap-6"><div class="space-y-4"><div class="glass p-5 space-y-3"><h3 class="font-semibold">${v?'Video bearbeiten':'Video hinzufügen'}</h3><input id="v-url" class="inp" placeholder="YouTube-Link oder Video-ID" value="${v?esc(v.vid):''}"><input id="v-title" class="inp" placeholder="Titel" value="${v?esc(v.title):''}"><textarea id="v-desc" rows="3" class="inp" placeholder="Beschreibung">${v?esc(v.desc):''}</textarea><button class="btn" onclick="saveVideo('${v?.id||''}')">Speichern</button></div>
+    ${S.videos.map(x=>`<div class="glass p-3 flex gap-2 items-center"><span class="flex-1 text-sm truncate">${esc(x.title)}</span><button class="btn2" onclick="S.edit={t:'v',id:'${x.id}'};render()">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="delItem('videos','${x.id}')">Löschen</button></div>`).join('')}</div>
+    <div class="space-y-4"><div class="glass p-5 space-y-3"><h3 class="font-semibold">${a?'Artikel bearbeiten':'Artikel / Anleitung schreiben'}</h3><input id="a-title" class="inp" placeholder="Titel" value="${a?esc(a.title):''}"><select id="a-cat" class="inp">${CATS.map(c=>`<option ${a&&a.cat==c?'selected':''}>${c}</option>`).join('')}</select><textarea id="a-body" rows="9" class="inp" placeholder="Inhalt. Leerzeile = neuer Absatz, '## Überschrift', '- Listenpunkt'">${a?esc(a.body):''}</textarea><button class="btn" onclick="saveArt('${a?.id||''}')">Veröffentlichen</button></div>
+    ${S.articles.map(x=>`<div class="glass p-3 flex gap-2 items-center"><span class="flex-1 text-sm truncate">${esc(x.title)}</span><button class="btn2" onclick="S.edit={t:'a',id:'${x.id}'};render()">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="delItem('articles','${x.id}')">Löschen</button></div>`).join('')}</div></div>`},
+  tickets:()=>`<div class="space-y-3">${S.tickets.map(t=>`<button onclick="openChat('${t.id}',true)" class="glass w-full p-4 flex items-center gap-3 text-left"><b>${t.id}</b>${badge(t.status)}<span class="text-sm opacity-70">${esc(t.category)}</span>${t.unread?'<span class="w-2 h-2 rounded-full bg-rose-500"></span>':''}<span class="ml-auto text-xs opacity-60">${fmt(t.updatedAt)}</span></button>`).join('')||'<p class="opacity-60">Keine Tickets.</p>'}</div>`,
+  apps:()=>`<div class="space-y-3">${S.apps.map(a=>`<div class="glass p-4"><div class="flex items-center gap-2 flex-wrap"><b>${esc(a.name)}</b><span class="text-sm opacity-70">Klasse ${esc(a.klass)}</span><span class="text-xs px-2 py-0.5 rounded-full bg-violet-500/20">${a.status}</span><span class="ml-auto text-xs opacity-60">${fmt(a.createdAt)}</span></div><p class="text-sm mt-2 opacity-80">${esc(a.motivation)}</p><div class="flex gap-2 mt-3"><button class="btn2 !text-emerald-500" onclick="DB.upd('applications','${a.id}',{status:'Angenommen'})">Annehmen</button><button class="btn2 !text-amber-500" onclick="DB.upd('applications','${a.id}',{status:'Abgelehnt'})">Ablehnen</button><button class="btn2 !text-rose-500" onclick="delItem('applications','${a.id}')">Löschen</button></div></div>`).join('')||'<p class="opacity-60">Keine Bewerbungen.</p>'}</div>`,
+  team:()=>`<div class="grid md:grid-cols-2 gap-6"><div class="glass p-5 space-y-3"><h3 class="font-semibold">Neuen Zugang anlegen</h3><input id="u-mail" type="email" class="inp" placeholder="E-Mail"><input id="u-name" class="inp" placeholder="Name"><input id="u-pw" type="text" class="inp" placeholder="Passwort (min. 6 Zeichen)"><select id="u-role" class="inp"><option>Medienscout</option><option>Admin</option></select><button class="btn" onclick="addUser()">Anlegen</button></div>
+  <div class="space-y-3">${S.users.map(u=>`<div class="glass p-3 flex items-center gap-2"><div class="flex-1"><b class="text-sm">${esc(u.name)}</b> <span class="text-xs opacity-70">${esc(u.role)}</span><div class="text-xs opacity-60">${esc(u.email)}</div></div>${u.id!=S.user.uid?`<button class="btn2 !text-rose-500" onclick="delItem('users','${u.id}')">Entfernen</button>`:''}</div>`).join('')}</div></div>`
+};
+window.delItem=async(c,id)=>{if(confirm('Wirklich löschen?'))await DB.del(c,id)};
+window.saveVideo=async id=>{const vid=ytId(val('v-url'));if(!vid)return toast('Ungültiger YouTube-Link.');const d={vid,title:val('v-title'),desc:val('v-desc')};if(!d.title)return toast('Titel fehlt.');
+  id?await DB.upd('videos',id,d):await DB.add('videos',{...d,createdAt:Date.now()});S.edit=null;render()};
+window.saveArt=async id=>{const d={title:val('a-title'),cat:val('a-cat'),body:val('a-body')};if(!d.title||!d.body)return toast('Titel und Inhalt nötig.');
+  id?await DB.upd('articles',id,d):await DB.add('articles',{...d,createdAt:Date.now()});S.edit=null;render()};
+window.addUser=async()=>{const email=val('u-mail'),name=val('u-name'),pw=val('u-pw'),role=val('u-role');if(!email||!name||pw.length<6)return toast('Bitte alles korrekt ausfüllen.');
+  try{const sec=initializeApp(firebaseConfig,'sec'+Date.now()),sa=getAuth(sec);const c=await createUserWithEmailAndPassword(sa,email,pw);
+    await DB.set('users',c.user.uid,{email,name,role});await signOut(sa);toast('Zugang angelegt.');['u-mail','u-name','u-pw'].forEach(i=>$('#'+i).value='')}catch(e){toast('Fehler: '+e.code)}};
+
+// ---------- Ersteinrichtung + Demo-Daten ----------
+window.setup=async()=>{
+  try{const email=val('l-mail'),pw=val('l-pw');const c=await createUserWithEmailAndPassword(auth,email,pw);
+    await DB.set('users',c.user.uid,{email,name:'Admin',role:'Admin'});
+    await DB.set('settings','main',{tickets:true,apps:true,setupDone:true});
+    const now=Date.now();
+    const vids=[['Y3SFXvtfZQQ','Sicher im Netz – Basics','Grundlagen zu Privatsphäre und sicherem Verhalten im Internet.'],['hJy5vmcrbW4','Cybermobbing erkennen','Woran du Cybermobbing erkennst und wie du reagieren kannst.']];
+    for(const[i,[vid,title,desc]]of vids.entries())await DB.add('videos',{vid,title,desc,createdAt:now+i});
+    const arts=[['Cybermobbing','Was tun bei Cybermobbing?',"## Ruhe bewahren\nAntworte nicht aus Wut und lösche nichts.\n\n- Screenshots als Beweis sichern\n- Täter blockieren und melden\n- Vertrauenspersonen oder Medienscouts ansprechen\n\nDu bist nicht schuld. Hilfe findest du auch anonym über unser Ticket-System."],
+      ['Passwörter & Sicherheit','2-Faktor-Authentifizierung (2FA) einrichten',"## Warum 2FA?\nEin Passwort allein reicht oft nicht. 2FA fügt einen zweiten Schutz hinzu.\n\n- Öffne die Sicherheitseinstellungen deines Kontos\n- Wähle „Zwei-Faktor-Authentifizierung“\n- Nutze eine Authenticator-App statt SMS\n- Speichere die Backup-Codes sicher ab"],
+      ['Datenschutz','Sichere Passwörter erstellen',"## Die Regeln\n- Mindestens 12 Zeichen\n- Pro Dienst ein eigenes Passwort\n- Passwortsätze statt einzelner Wörter\n\nEin Passwort-Manager hilft dir, den Überblick zu behalten."]];
+    for(const[i,[cat,title,body]]of arts.entries())await DB.add('articles',{cat,title,body,createdAt:now+i});
+    await DB.set('tickets','MS-1234',{category:'Cybermobbing',status:'In Bearbeitung',createdAt:now,updatedAt:now,unread:false});
+    await DB.addMsg('MS-1234',{from:'student',text:'In unserer Klassengruppe werden fiese Nachrichten über mich geschrieben.',img:null,ts:now});
+    await DB.addMsg('MS-1234',{from:'scout',text:'Danke, dass du dich meldest. Kannst du Screenshots hochladen?',img:null,ts:now+1000});
+    await DB.add('applications',{name:'Mia Beispiel',klass:'8b',motivation:'Ich interessiere mich für Medienkompetenz und möchte anderen helfen.',status:'Offen',createdAt:now});
+    toast('Admin angelegt, Demo-Daten geladen.');
+  }catch(e){toast('Fehler: '+e.code)}};
+
+Object.assign(window,{S,DB,val,render});
+render();
+</script>
+</body>
+</html>
