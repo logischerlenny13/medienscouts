@@ -842,6 +842,20 @@ window.createTask=async()=>{if(!isAdmin())return toast('Nur Admins dürfen Aufga
 window.toggleTask=async(id,status)=>{await DB.upd('tasks',id,{status,updatedAt:Date.now()});await logActivity('Aufgabenstatus geändert',status);render()};
 window.savePasswordApps=async()=>{if(!isAdmin())return toast('Nur Admins dürfen das ändern.');const passwordApps=val('password-apps').split(',').map(x=>x.trim()).filter(Boolean);if(!passwordApps.length)return toast('Mindestens eine Anwendung eintragen.');await DB.set('settings','main',{...S.settings,setupDone:true,passwordApps});await logActivity('Passwort-Anwendungen geändert',passwordApps.join(', '));toast('Anwendungen gespeichert.')};
 window.setScoutPermission=async(k,v)=>{if(!isAdmin())return toast('Nur Admins dürfen Rechte ändern.');const scoutPermissions={...S.settings.scoutPermissions,[k]:v};await DB.set('settings','main',{...S.settings,setupDone:true,scoutPermissions});await logActivity('Scout-Recht geändert',k+' = '+v);toast('Berechtigung gespeichert.')};
+
+function managementSettingsView(){
+  const ticketRows=S.tickets.map(t=>'<div class="glass p-3 flex flex-wrap items-center gap-2"><button class="text-left flex-1" onclick="openChat(\''+t.id+'\',true)"><b>'+esc(t.subject||t.category)+'</b> '+(t.kind==='password'?'<span class="bg-rose-600 text-white rounded px-2 text-xs">🔴 Passwort</span>':'')+'<div class="text-xs opacity-60">'+esc(t.userName)+' · '+esc(t.userEmail)+' · '+esc(t.passwordApp||t.category)+' · '+esc(t.assignedName||'Unzugewiesen')+'</div></button>'+badge(t.status)+'<select class="inp !w-auto" onchange="setTicketPriority(\''+t.id+'\',this.value)"><option '+((!t.priority||t.priority==='Normal')?'selected':'')+'>Normal</option><option '+(t.priority==='Hoch'?'selected':'')+'>Hoch</option><option '+(t.priority==='Dringend'?'selected':'')+'>Dringend</option></select></div>').join('');
+  const taskRows=S.tasks.filter(t=>isAdmin()||t.assigneeUid===S.user.uid).map(t=>'<div class="p-3 bg-slate-500/10 rounded-xl flex justify-between gap-2"><div><b>'+esc(t.title)+'</b><div class="text-xs opacity-60">'+esc(t.assigneeName||'')+' · '+fmt(t.createdAt)+'</div>'+esc(t.description||'')+'</div><button class="btn2" onclick="toggleTask(\''+t.id+'\',\''+(t.status==='Erledigt'?'Offen':'Erledigt')+'\')">'+(t.status==='Erledigt'?'Wieder öffnen':'Erledigt')+'</button></div>').join('');
+  return '<div class="space-y-5 pt-6 border-t border-slate-300 dark:border-slate-700"><h3 class="text-lg font-bold">Team-Verwaltung</h3>'+
+  '<section class="glass p-5 space-y-3"><h4 class="font-bold">Support-Dashboard</h4><div class="grid sm:grid-cols-3 gap-3"><div>Offen: <b>'+S.tickets.filter(t=>t.status!=='Gelöst').length+'</b></div><div>Passwort-Anfragen: <b>'+S.tickets.filter(t=>t.kind==='password').length+'</b></div><div>Mir zugewiesen: <b>'+S.tickets.filter(t=>t.assignedUid===S.user.uid&&t.status!=='Gelöst').length+'</b></div></div>'+(ticketRows||'<p>Keine Tickets.</p>')+'</section>'+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Passwort-Anwendungen</h4><p class="text-xs opacity-70">Diese Apps stehen bei einer Passwort-Anfrage zur Auswahl.</p><input id="password-apps" class="inp" value="'+esc((S.settings.passwordApps||[]).join(', '))+'" placeholder="Apps mit Komma trennen"><button class="btn2" onclick="savePasswordApps()">Anwendungen speichern</button></section>':'')+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Medienscout-Rechte</h4>'+[['support','Support bearbeiten'],['passwordSupport','Passwort-Anfragen bearbeiten'],['content','Artikel/Videos bearbeiten'],['deleteContent','Artikel/Videos löschen'],['settings','Einstellungen/Design ändern'],['surveys','Umfragen erstellen'],['board','Schwarzes Brett verwalten'],['applications','Bewerbungen annehmen'],['accounts','Konten verwalten']].map(([k,l])=>'<label class="flex justify-between p-2 bg-slate-500/10 rounded-lg">'+l+'<input type="checkbox" '+(S.settings.scoutPermissions&&S.settings.scoutPermissions[k]?'checked':'')+' onchange="setScoutPermission(\''+k+'\',this.checked)"></label>').join('')+'</section>':'')+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Aufgabe zuweisen</h4><input id="task-title" class="inp" placeholder="Aufgabe"><textarea id="task-desc" class="inp" placeholder="Beschreibung"></textarea><select id="task-user" class="inp">'+S.users.filter(u=>u.role==='Medienscout').map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('')+'</select><button class="btn" onclick="createTask()">Zuweisen</button></section>':'')+
+  '<section class="glass p-5 space-y-2"><h4 class="font-bold">Aufgaben</h4>'+(taskRows||'Keine Aufgaben.')+'</section>'+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Statistiken</h4><div>Seitenaufrufe: <b>'+S.viewCount+'</b> · Veröffentlichte Artikel: <b>'+S.articles.filter(a=>a.published!==false).length+'</b> · Gelöste Tickets: <b>'+S.tickets.filter(t=>t.status==='Gelöst').length+'</b></div></section><section class="glass p-5 space-y-2"><h4 class="font-bold">Aktivitätsprotokoll</h4>'+(S.activity.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,100).map(a=>'<div class="border-b border-slate-500/10 py-2 text-sm"><b>'+esc(a.name||'')+'</b> · '+esc(a.action||'')+' '+esc(a.detail||'')+' <span class="text-xs opacity-50">'+fmt(a.ts)+'</span></div>').join('')||'Noch keine Aktivitäten.')+'</section>':'')+
+  '</div>';
+}
+
 const adminTabs={
   settings:()=>`<div class="grid md:grid-cols-2 gap-6">
     <div class="space-y-3">
@@ -876,6 +890,7 @@ const adminTabs={
         </div>
       </div>
     </div>
+    ${managementSettingsView()}
   </div>`,
 
   content:()=>{
