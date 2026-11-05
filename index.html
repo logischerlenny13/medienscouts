@@ -26,7 +26,7 @@
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
@@ -49,11 +49,11 @@ const DB={
 
 const S={
   settings:{
-    tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,
+    tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,extensionsEnabled:true,passwordApps:['Schulportal','Microsoft 365','Google Workspace','Schul-WLAN','Sonstiges'],scoutPermissions:{support:true,passwordSupport:true,content:true,deleteContent:false,settings:false,surveys:true,board:true,applications:true,accounts:false},
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
   needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],
-  user:null,view:'home',activeArtId:null,activeSurveyId:null,surveyStepClass:'',
+  user:null,view:'home',tasks:[],activity:[],viewCount:0,activeArtId:null,activeSurveyId:null,surveyStepClass:'',
   adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,
   chatNoteMode:false,surveyBuilderQs:[],surveyResults:[],activeResultSurvey:null,unsubs:[]
 };
@@ -81,6 +81,10 @@ const fmtArticle=t=>String(t||'').split(/\n\s*\n/).map(b=>{
 }).join('');
 
 const isStaff=()=>S.user&&['Admin','Medienscout'].includes(S.user.role);
+const isAdmin=()=>S.user?.role==='Admin';
+const can=p=>isAdmin()||(S.user?.role==='Medienscout'&&S.settings.scoutPermissions?.[p]===true);
+const extOn=()=>true;
+const logActivity=async(action,detail='')=>{if(!S.user)return;try{await DB.add('activity',{uid:S.user.uid,name:S.user.name,role:S.user.role,action,detail,ts:Date.now()})}catch(e){console.warn(e)}};
 const sortPinned=arr=>[...arr].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||(b.createdAt||0)-(a.createdAt||0));
 
 // ---------- Live-Abos ----------
@@ -94,6 +98,7 @@ DB.watch('videos',d=>{S.videos=d;render()},'createdAt');
 DB.watch('articles',d=>{S.articles=d;render()},'createdAt');
 DB.watch('board',d=>{S.boardItems=d;render()},'createdAt');
 DB.watch('surveys',d=>{S.surveys=d;render()},'createdAt');
+DB.watch('tasks',d=>{S.tasks=d;render()},'createdAt');DB.watch('activity',d=>{S.activity=d;render()},'createdAt');DB.watch('pageViews',d=>{S.viewCount=d.length;render()});
 
 onAuthStateChanged(auth,async u=>{
   S.unsubs.forEach(f=>f());S.unsubs=[];
@@ -125,6 +130,7 @@ function applyDesign(){
 
 // ---------- Haupt-Rendering ----------
 function render(){
+  if(S.view==='home'&&S.user&&!S._viewCounted){S._viewCounted=true;DB.add('pageViews',{uid:S.user.uid,ts:Date.now()}).catch(()=>{});}
   const ae=document.activeElement;
   if(ae&&ae.tagName!='BODY'&&ae.closest('#app')&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)&&!ae.id.startsWith('s-'))return;
   let content='';
@@ -152,7 +158,8 @@ const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 b
     <div class="ml-auto flex items-center gap-1.5 sm:gap-2">
       <button class="btn2 ${S.view=='home'||S.view=='article'?'!bg-blue-600 !text-white':''}" onclick="S.view='home';render()"><i data-lucide="book-open" class="w-4 h-4"></i><span class="hidden md:inline">Start & Wissen</span></button>
       ${S.settings.surveys?`<button class="btn2 ${S.view=='surveys'?'!bg-blue-600 !text-white':''}" onclick="S.view='surveys';S.activeSurveyId=null;render()"><i data-lucide="clipboard-list" class="w-4 h-4"></i><span class="hidden md:inline">Umfragen</span></button>`:''}
-      ${S.settings.tickets?`<button class="btn2 ${S.view=='tickets'?'!bg-blue-600 !text-white':''}" onclick="goProtected('tickets')"><i data-lucide="message-square-text" class="w-4 h-4"></i><span class="hidden sm:inline">Tickets</span>${S.myTickets.some(t=>t.unreadStudent)?`<span class="w-2 h-2 rounded-full bg-rose-500"></span>`:''}</button>`:''}
+      ${S.settings.tickets?`<button class="btn2 ${S.view=='tickets'?'!bg-blue-600 !text-white':''}" onclick="S.passwordMode=false;goProtected('tickets')"><i data-lucide="message-square-text" class="w-4 h-4"></i><span class="hidden sm:inline">Tickets</span>${S.myTickets.some(t=>t.unreadStudent)?`<span class="w-2 h-2 rounded-full bg-rose-500"></span>`:''}</button>`:''}
+      ${S.settings.tickets?`<button class="btn2 ${S.passwordMode?'!bg-rose-600 !text-white':''}" onclick="S.passwordMode=true;goProtected('tickets')"><i data-lucide="key-round" class="w-4 h-4"></i><span class="hidden sm:inline">Passwort zurücksetzen</span></button>`:''}
       ${S.settings.apps?`<button class="btn2 ${S.view=='apply'?'!bg-blue-600 !text-white':''}" onclick="goProtected('apply')"><i data-lucide="user-plus" class="w-4 h-4"></i><span class="hidden lg:inline">Bewerbung</span></button>`:''}
       ${isStaff()?`<button class="btn2 ${S.view=='admin'?'!bg-blue-600 !text-white':''}" onclick="S.view='admin';render()"><i data-lucide="shield" class="w-4 h-4 text-blue-500 ${S.view=='admin'?'!text-white':''}"></i><span>Admin</span></button>`:''}
       <button class="btn2" onclick="document.documentElement.classList.toggle('dark')" title="Hell/Dunkel"><i data-lucide="sun-moon" class="w-4 h-4"></i></button>
@@ -478,23 +485,8 @@ function studentTicketsView(){
     <div class="grid lg:grid-cols-5 gap-6">
       <div class="glass p-5 space-y-3 lg:col-span-2 h-fit">
         <h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-blue-500"></i>Neues Ticket starten</h2>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label>
-          <select id="t-cat" class="inp">${CATS.map(c=>`<option>${c}</option>`).join('')}</select>
-        </div>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Betreff (kurz)</label>
-          <input id="t-subj" class="inp" placeholder="z.B. Hilfe bei WhatsApp / Account">
-        </div>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Deine Nachricht</label>
-          <textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz dein Anliegen…"></textarea>
-        </div>
-        <div id="t-prev"></div>
-        <div class="flex items-center justify-between pt-1">
-          <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,'t-prev')"></label>
-          <button class="btn" onclick="createTicket()"><i data-lucide="send" class="w-4 h-4"></i>Ticket öffnen</button>
-        </div>
+        ${S.passwordMode?'<div class="space-y-2"><div class="text-sm font-semibold text-rose-500">🔴 Passwort zurücksetzen</div><label class="text-xs opacity-70 block mb-1">Welche App?</label><select id="t-password-app" class="inp">'+(S.settings.passwordApps||[]).map(x=>'<option>'+esc(x)+'</option>').join('')+'</select><p class="text-xs opacity-60">Wähle nur die App aus. Die Medienscouts kümmern sich anschließend um die Anfrage.</p></div>': '<div><label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label><select id="t-cat" class="inp"><option value="Allgemeiner Support">Allgemeiner Support</option>'+CATS.map(c=>'<option>'+esc(c)+'</option>').join('')+'</select></div><div><label class="text-xs opacity-70 block mb-1">Betreff (kurz)</label><input id="t-subj" class="inp" placeholder="z.B. Hilfe bei einem Account"></div><div><label class="text-xs opacity-70 block mb-1">Deine Nachricht</label><textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz dein Anliegen…"></textarea></div><div id="t-prev"></div><label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,\'t-prev\')"></label>'}
+        <div class="flex justify-end pt-1"><button class="btn" onclick="createTicket()"><i data-lucide="send" class="w-4 h-4"></i>${S.passwordMode?'Anfrage senden':'Ticket öffnen'}</button></div>
       </div>
 
       <div class="space-y-3 lg:col-span-3">
@@ -636,18 +628,16 @@ window.pick=async(inp,prev,max=900)=>{
 window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[130] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full rounded-lg">`;document.body.appendChild(d)};
 
 window.createTicket=async()=>{
-  const subj=val('t-subj'),msg=val('t-msg'),cat=val('t-cat');
-  if(!subj||!msg)return toast('Bitte Betreff und Nachricht ausfüllen.');
+  const passwordRequest=!!S.passwordMode,app=passwordRequest?val('t-password-app'):'';
+  const subj=passwordRequest?'Passwort zurücksetzen: '+app:val('t-subj'),msg=passwordRequest?'Passwort zurücksetzen für die Anwendung: '+app:val('t-msg'),cat=passwordRequest?'Passwort':val('t-cat');
+  if(passwordRequest&&!app)return toast('Bitte eine App auswählen.');
+  if(!passwordRequest&&(!subj||!msg))return toast('Bitte Betreff und Nachricht ausfüllen.');
   const now=Date.now();
-  const ref=await DB.add('tickets',{
-    uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,
-    subject:subj,category:cat,status:'Neu',assignedUid:null,assignedName:null,
-    createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false
-  });
-  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:pendingImg['t-prev']||null,internal:false,ts:now});
-  pendingImg['t-prev']=null;
-  toast('Ticket erstellt.');
-  openChat(ref.id,false);
+  const ref=await DB.add('tickets',{uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,subject:subj,category:cat,kind:passwordRequest?'password':'support',passwordApp:passwordRequest?app:'',priority:'Normal',status:'Neu',assignedUid:null,assignedName:null,createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false});
+  if(!passwordRequest)await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:pendingImg['t-prev']||null,internal:false,ts:now});
+  pendingImg['t-prev']=null;S.passwordMode=false;
+  await logActivity(passwordRequest?'Passwort-Anfrage erstellt':'Support-Ticket erstellt',subj);
+  toast(passwordRequest?'Passwort-Anfrage wurde gesendet.':'Ticket erstellt.');openChat(ref.id,false);
 };
 
 // Admin startet direkt ein Gespräch mit einem Schüler
@@ -745,7 +735,7 @@ window.openChat=async(id,asAdmin)=>{
       }
       return `<div class="flex ${m.from==mySide?'justify-end':'justify-start'}">
         <div class="max-w-[80%] sm:max-w-[70%] px-4 py-3 rounded-2xl text-sm shadow-xs ${m.from==mySide?'bg-blue-600 text-white':'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
-          <div class="text-[11px] opacity-75 mb-1 font-medium">${esc(m.senderName||(m.from=='scout'?'Medienscout':'Schüler'))} · ${fmt(m.ts)}</div>
+          <div class="text-[11px] opacity-75 mb-1 font-medium">${esc(m.senderName||(m.from=='scout'?'Medienscout':'Schüler'))} <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${m.senderRole==='Admin'?'bg-rose-500/15 text-rose-500':m.senderRole==='Medienscout'?'bg-amber-500/15 text-amber-600':'bg-emerald-500/15 text-emerald-600'}">${esc(m.senderRole|| (m.from==='scout'?'Medienscout':'User'))}</span> · ${fmt(m.ts)}</div>
           ${m.text?`<div class="leading-relaxed">${esc(m.text).replace(/\n/g,'<br>')}</div>`:''}
           ${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 cursor-zoom-in border border-white/20">`:''}
         </div>
@@ -773,19 +763,20 @@ window.setChatMode=isNote=>{
 };
 
 window.claimTicket=async id=>{
-  await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});
+  if(!can('support'))return toast('Keine Berechtigung.');await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});await logActivity('Ticket übernommen',id);
   if($('#c-assign'))$('#c-assign').textContent='Betreuer: '+S.user.name;
   if($('#c-st'))$('#c-st').innerHTML=badge('In Bearbeitung');
   toast('Du hast das Ticket übernommen.');
 };
 
-window.updStatus=async(id,st)=>{await DB.upd('tickets',id,{status:st,updatedAt:Date.now()});$('#c-st').innerHTML=badge(st)};
+window.updStatus=async(id,st)=>{if(!can('support'))return toast('Keine Berechtigung.');await DB.upd('tickets',id,{status:st,updatedAt:Date.now()});await logActivity('Ticketstatus geändert',st);$('#c-st').innerHTML=badge(st)};
 
 window.sendMsg=async(id,asAdmin)=>{
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
-  const now=Date.now();
-  const isInternal=asAdmin&&S.chatNoteMode;
-  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?' (Scout)':''),text,img,internal:isInternal,ts:now});
+  if(asAdmin&&!can('support'))return toast('Keine Berechtigung für Support-Anfragen.');
+  const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
+  if(asAdmin&&text.trim().toLowerCase().startsWith('/passwort'))return toast('Bitte kein Passwort per Chat-Befehl senden. Verwendet für neue Zugangsdaten einen sicheren, freigegebenen Übergabeweg statt des normalen Chatverlaufs.');
+  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(isAdmin()?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(isAdmin()?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now});
   if(!isInternal){
     await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
   }
@@ -819,9 +810,9 @@ function adminView(){
       <span class="text-xs px-3 py-1 rounded-full bg-blue-500/15 text-blue-500 font-semibold">Angemeldet als ${esc(S.user.name)} (${esc(S.user.role)})</span>
     </div>
     <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
-      ${TABS.map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}</button>`).join('')}
+      ${TABS.filter(([k])=>k!=='team'||isAdmin()).filter(([k])=>k!=='extensions'||extOn()).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}</button>`).join('')}
     </div>
-    ${adminTabs[S.adminTab]()}
+    ${(adminTabs[S.adminTab]||adminTabs.settings)()}
   </div>`;
 }
 
@@ -832,17 +823,38 @@ const toggleRow=(k,l,d)=>`<div class="glass p-4 flex items-center justify-betwee
   </button>
 </div>`;
 
-window.setSet=(k,v)=>DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});
+window.setSet=async(k,v)=>{if(!can('settings'))return toast('Keine Berechtigung für Einstellungen.');await DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});await logActivity('Einstellung geändert',k+' = '+v)};
 window.saveBrand=async()=>{
-  await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
+  if(!can('settings'))return toast('Keine Berechtigung.');await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
   toast('Texte gespeichert.');
 };
 window.uploadAsset=async(inp,key,max)=>{
+  if(!can('settings'))return toast('Keine Berechtigung für Einstellungen.');
   if(!inp.files[0])return;
   const data=await compress(inp.files[0],max,0.8);
   await setSet(key,data);
   toast('Bild gespeichert.');
 };
+
+function extensionsView(){return `<div class="space-y-5"><section class="glass p-5 space-y-3"><h3 class="font-bold">Support-Dashboard</h3><div class="grid sm:grid-cols-3 gap-3"><div>Offen: <b>${S.tickets.filter(t=>t.status!=='Gelöst').length}</b></div><div>Passwort: <b>${S.tickets.filter(t=>t.kind==='password').length}</b></div><div>Mir zugewiesen: <b>${S.tickets.filter(t=>t.assignedUid===S.user.uid&&t.status!=='Gelöst').length}</b></div></div>${S.tickets.map(t=>`<div class="glass p-3 flex flex-wrap items-center gap-2"><button class="text-left flex-1" onclick="openChat('${t.id}',true)"><b>${esc(t.subject||t.category)}</b> ${t.kind==='password'?'<span class="bg-rose-600 text-white rounded px-2 text-xs">🔴 Passwort</span>':''}<div class="text-xs opacity-60">${esc(t.userName)} · ${esc(t.userEmail)} · ${esc(t.assignedName||'Unzugewiesen')}</div></button>${badge(t.status)}<select class="inp !w-auto" onchange="setTicketPriority('${t.id}',this.value)"><option ${(!t.priority||t.priority==='Normal')?'selected':''}>Normal</option><option ${t.priority==='Hoch'?'selected':''}>Hoch</option><option ${t.priority==='Dringend'?'selected':''}>Dringend</option></select></div>`).join('')||'<p>Keine Tickets.</p>'}</section>${isAdmin()?`<section class="glass p-5 space-y-3"><h3 class="font-bold">Aufgabe zuweisen</h3><input id="task-title" class="inp" placeholder="Aufgabe"><textarea id="task-desc" class="inp" placeholder="Beschreibung"></textarea><select id="task-user" class="inp">${S.users.filter(u=>u.role==='Medienscout').map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select><button class="btn" onclick="createTask()">Zuweisen</button></section>`:''}<section class="glass p-5 space-y-2"><h3 class="font-bold">Aufgaben</h3>${S.tasks.filter(t=>isAdmin()||t.assigneeUid===S.user.uid).map(t=>`<div class="p-3 bg-slate-500/10 rounded-xl flex justify-between gap-2"><div><b>${esc(t.title)}</b><div class="text-xs opacity-60">${esc(t.assigneeName||'')} · ${fmt(t.createdAt)}</div>${esc(t.description||'')}</div><button class="btn2" onclick="toggleTask('${t.id}','${t.status==='Erledigt'?'Offen':'Erledigt'}')">${t.status==='Erledigt'?'Wieder öffnen':'Erledigt'}</button></div>`).join('')||'Keine Aufgaben.'}</section>${isAdmin()?`<section class="glass p-5 space-y-3"><h3 class="font-bold">Statistiken</h3><div>Seitenaufrufe: <b>${S.viewCount}</b> (ab Einbau) · Veröffentlichte Artikel: <b>${S.articles.filter(a=>a.published!==false).length}</b> · Gelöste Tickets: <b>${S.tickets.filter(t=>t.status==='Gelöst').length}</b></div></section><section class="glass p-5 space-y-2"><h3 class="font-bold">Aktivitätsprotokoll</h3>${S.activity.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,100).map(a=>`<div class="border-b border-slate-500/10 py-2 text-sm"><b>${esc(a.name||'')}</b> · ${esc(a.action||'')} ${esc(a.detail||'')} <span class="text-xs opacity-50">${fmt(a.ts)}</span></div>`).join('')||'Noch keine Aktivitäten.'}</section><section class="glass p-5 space-y-2"><h3 class="font-bold">Passwort-Anwendungen für das Formular</h3><input id="password-apps" class="inp" value="${esc((S.settings.passwordApps||[]).join(', '))}" placeholder="Mit Komma trennen"><button class="btn2" onclick="savePasswordApps()">Anwendungen speichern</button><h3 class="font-bold">Medienscout-Rechte</h3>${[['support','Support bearbeiten'],['passwordSupport','Passwort-Anfragen'],['content','Artikel/Videos bearbeiten'],['deleteContent','Artikel/Videos löschen'],['settings','Einstellungen/Design'],['surveys','Umfragen'],['board','Schwarzes Brett'],['applications','Bewerbungen annehmen'],['accounts','Konten verwalten']].map(([k,l])=>`<label class="flex justify-between p-2 bg-slate-500/10 rounded-lg">${l}<input type="checkbox" ${S.settings.scoutPermissions?.[k]?'checked':''} onchange="setScoutPermission('${k}',this.checked)"></label>`).join('')}</section>`:''}</div>`}
+window.setTicketPriority=async(id,priority)=>{if(!can('support'))return toast('Keine Berechtigung.');await DB.upd('tickets',id,{priority,updatedAt:Date.now()});await logActivity('Ticket-Priorität geändert',priority);toast('Priorität gespeichert.')};
+window.createTask=async()=>{if(!isAdmin())return toast('Nur Admins dürfen Aufgaben zuweisen.');const title=val('task-title'),uid=val('task-user'),u=S.users.find(x=>x.id===uid);if(!title||!u)return toast('Titel und Medienscout auswählen.');await DB.add('tasks',{title,description:val('task-desc'),assigneeUid:uid,assigneeName:u.name,createdBy:S.user.uid,status:'Offen',createdAt:Date.now()});await logActivity('Aufgabe zugewiesen',title);toast('Aufgabe zugewiesen.');render()};
+window.toggleTask=async(id,status)=>{await DB.upd('tasks',id,{status,updatedAt:Date.now()});await logActivity('Aufgabenstatus geändert',status);render()};
+window.savePasswordApps=async()=>{if(!isAdmin())return toast('Nur Admins dürfen das ändern.');const passwordApps=val('password-apps').split(',').map(x=>x.trim()).filter(Boolean);if(!passwordApps.length)return toast('Mindestens eine Anwendung eintragen.');await DB.set('settings','main',{...S.settings,setupDone:true,passwordApps});await logActivity('Passwort-Anwendungen geändert',passwordApps.join(', '));toast('Anwendungen gespeichert.')};
+window.setScoutPermission=async(k,v)=>{if(!isAdmin())return toast('Nur Admins dürfen Rechte ändern.');const scoutPermissions={...S.settings.scoutPermissions,[k]:v};await DB.set('settings','main',{...S.settings,setupDone:true,scoutPermissions});await logActivity('Scout-Recht geändert',k+' = '+v);toast('Berechtigung gespeichert.')};
+
+function managementSettingsView(){
+  const ticketRows=S.tickets.map(t=>'<div class="glass p-3 flex flex-wrap items-center gap-2"><button class="text-left flex-1" onclick="openChat(\''+t.id+'\',true)"><b>'+esc(t.subject||t.category)+'</b> '+(t.kind==='password'?'<span class="bg-rose-600 text-white rounded px-2 text-xs">🔴 Passwort</span>':'')+'<div class="text-xs opacity-60">'+esc(t.userName)+' · '+esc(t.userEmail)+' · '+esc(t.passwordApp||t.category)+' · '+esc(t.assignedName||'Unzugewiesen')+'</div></button>'+badge(t.status)+'<select class="inp !w-auto" onchange="setTicketPriority(\''+t.id+'\',this.value)"><option '+((!t.priority||t.priority==='Normal')?'selected':'')+'>Normal</option><option '+(t.priority==='Hoch'?'selected':'')+'>Hoch</option><option '+(t.priority==='Dringend'?'selected':'')+'>Dringend</option></select></div>').join('');
+  const taskRows=S.tasks.filter(t=>isAdmin()||t.assigneeUid===S.user.uid).map(t=>'<div class="p-3 bg-slate-500/10 rounded-xl flex justify-between gap-2"><div><b>'+esc(t.title)+'</b><div class="text-xs opacity-60">'+esc(t.assigneeName||'')+' · '+fmt(t.createdAt)+'</div>'+esc(t.description||'')+'</div><button class="btn2" onclick="toggleTask(\''+t.id+'\',\''+(t.status==='Erledigt'?'Offen':'Erledigt')+'\')">'+(t.status==='Erledigt'?'Wieder öffnen':'Erledigt')+'</button></div>').join('');
+  return '<div class="space-y-5 pt-6 border-t border-slate-300 dark:border-slate-700"><h3 class="text-lg font-bold">Team-Verwaltung</h3>'+
+  '<section class="glass p-5 space-y-3"><h4 class="font-bold">Support-Dashboard</h4><div class="grid sm:grid-cols-3 gap-3"><div>Offen: <b>'+S.tickets.filter(t=>t.status!=='Gelöst').length+'</b></div><div>Passwort-Anfragen: <b>'+S.tickets.filter(t=>t.kind==='password').length+'</b></div><div>Mir zugewiesen: <b>'+S.tickets.filter(t=>t.assignedUid===S.user.uid&&t.status!=='Gelöst').length+'</b></div></div>'+(ticketRows||'<p>Keine Tickets.</p>')+'</section>'+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Passwort-Anwendungen</h4><p class="text-xs opacity-70">Diese Apps stehen bei einer Passwort-Anfrage zur Auswahl.</p><input id="password-apps" class="inp" value="'+esc((S.settings.passwordApps||[]).join(', '))+'" placeholder="Apps mit Komma trennen"><button class="btn2" onclick="savePasswordApps()">Anwendungen speichern</button></section>':'')+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Medienscout-Rechte</h4>'+[['support','Support bearbeiten'],['passwordSupport','Passwort-Anfragen bearbeiten'],['content','Artikel/Videos bearbeiten'],['deleteContent','Artikel/Videos löschen'],['settings','Einstellungen/Design ändern'],['surveys','Umfragen erstellen'],['board','Schwarzes Brett verwalten'],['applications','Bewerbungen annehmen'],['accounts','Konten verwalten']].map(([k,l])=>'<label class="flex justify-between p-2 bg-slate-500/10 rounded-lg">'+l+'<input type="checkbox" '+(S.settings.scoutPermissions&&S.settings.scoutPermissions[k]?'checked':'')+' onchange="setScoutPermission(\''+k+'\',this.checked)"></label>').join('')+'</section>':'')+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Aufgabe zuweisen</h4><input id="task-title" class="inp" placeholder="Aufgabe"><textarea id="task-desc" class="inp" placeholder="Beschreibung"></textarea><select id="task-user" class="inp">'+S.users.filter(u=>u.role==='Medienscout').map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('')+'</select><button class="btn" onclick="createTask()">Zuweisen</button></section>':'')+
+  '<section class="glass p-5 space-y-2"><h4 class="font-bold">Aufgaben</h4>'+(taskRows||'Keine Aufgaben.')+'</section>'+
+  (isAdmin()?'<section class="glass p-5 space-y-3"><h4 class="font-bold">Statistiken</h4><div>Seitenaufrufe: <b>'+S.viewCount+'</b> · Veröffentlichte Artikel: <b>'+S.articles.filter(a=>a.published!==false).length+'</b> · Gelöste Tickets: <b>'+S.tickets.filter(t=>t.status==='Gelöst').length+'</b></div></section><section class="glass p-5 space-y-2"><h4 class="font-bold">Aktivitätsprotokoll</h4>'+(S.activity.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,100).map(a=>'<div class="border-b border-slate-500/10 py-2 text-sm"><b>'+esc(a.name||'')+'</b> · '+esc(a.action||'')+' '+esc(a.detail||'')+' <span class="text-xs opacity-50">'+fmt(a.ts)+'</span></div>').join('')||'Noch keine Aktivitäten.')+'</section>':'')+
+  '</div>';
+}
 
 const adminTabs={
   settings:()=>`<div class="grid md:grid-cols-2 gap-6">
@@ -878,6 +890,7 @@ const adminTabs={
         </div>
       </div>
     </div>
+    ${managementSettingsView()}
   </div>`,
 
   content:()=>{
@@ -952,10 +965,11 @@ const adminTabs={
         <div>
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
+            ${t.kind==='password'?'<span class="text-xs px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
           </div>
-          <div class="text-xs opacity-70 mt-1">Schüler: <b>${esc(t.userName||'Schüler')}</b> (${esc(t.userEmail||'-')}) · ${esc(t.category)} · ${fmt(t.updatedAt||t.createdAt)}</div>
+          <div class="text-xs opacity-70 mt-1">Schüler: <b>${esc(t.userName||'Schüler')}</b> (${esc(t.userEmail||'-')}) · ${esc(t.category)} ${t.passwordApp?'· '+esc(t.passwordApp):''} · ${fmt(t.updatedAt||t.createdAt)}</div>
         </div>
       </button>
       <div class="flex items-center gap-2">
@@ -1112,7 +1126,7 @@ window.addBuilderQ=()=>{
 };
 
 window.saveSurvey=async()=>{
-  const title=val('sv-title'),desc=val('sv-desc'),anonymous=$('#sv-anon')?.checked??true;
+  if(!can('surveys'))return toast('Keine Berechtigung.');const title=val('sv-title'),desc=val('sv-desc'),anonymous=$('#sv-anon')?.checked??true;
   if(!title||!S.surveyBuilderQs.length)return toast('Bitte Titel und mindestens eine Frage hinzufügen.');
   await DB.add('surveys',{title,desc,anonymous,questions:S.surveyBuilderQs,active:true,createdAt:Date.now()});
   S.surveyBuilderQs=[];toast('Umfrage veröffentlicht!');render();
@@ -1168,7 +1182,7 @@ window.exportSurveyCsv=()=>{
 
 // ---------- Schwarzes Brett & CSV-Account-Import ----------
 window.saveBoardItem=async()=>{
-  const type=val('b-type'),title=val('b-title'),text=val('b-text');
+  if(!can('board'))return toast('Keine Berechtigung.');const type=val('b-type'),title=val('b-title'),text=val('b-text');
   if(!title||!text)return toast('Bitte Titel und Text eingeben.');
   await DB.add('board',{type,title,text,createdAt:Date.now()});
   toast('Am Schwarzen Brett veröffentlicht.');render();
@@ -1202,31 +1216,31 @@ window.runCsvImport=async()=>{
 
 // ---------- Standard Admin-Aktionen ----------
 window.acceptApplicant=async(appId,uid)=>{
-  await DB.upd('applications',appId,{status:'Angenommen'});
+  if(!can('applications'))return toast('Keine Berechtigung.');await DB.upd('applications',appId,{status:'Angenommen'});await logActivity('Bewerbung angenommen',appId);
   if(uid)await DB.upd('users',uid,{role:'Medienscout'}).catch(()=>{});
   toast('Bewerbung angenommen & als Medienscout freigeschaltet!');
 };
-window.delItem=async(c,id)=>{if(confirm('Diesen Eintrag wirklich löschen?'))await DB.del(c,id)};
+window.delItem=async(c,id)=>{if(c==='users'&&!isAdmin())return toast('Nur Admins dürfen Konten löschen.');if(['articles','videos'].includes(c)&&!can('deleteContent'))return toast('Keine Berechtigung zum Löschen von Inhalten.');if(c==='tickets'&&!can('support'))return toast('Keine Berechtigung.');if(confirm('Diesen Eintrag wirklich löschen?')){await DB.del(c,id);await logActivity('Eintrag gelöscht',c+'/'+id)}};
 window.saveVideo=async id=>{
-  const vid=ytId(val('v-url'));if(!vid)return toast('Ungültiger YouTube-Link.');
+  if(!can('content'))return toast('Keine Berechtigung.');const vid=ytId(val('v-url'));if(!vid)return toast('Ungültiger YouTube-Link.');
   const d={vid,title:val('v-title'),cat:val('v-cat'),desc:val('v-desc'),pinned:$('#v-pin')?.checked||false,published:true};
   if(!d.title)return toast('Titel fehlt.');
-  id?await DB.upd('videos',id,d):await DB.add('videos',{...d,createdAt:Date.now()});
+  id?await DB.upd('videos',id,d):await DB.add('videos',{...d,createdAt:Date.now()});await logActivity('Video gespeichert',d.title);
   S.edit=null;toast('Video gespeichert.');render();
 };
 window.saveArt=async id=>{
-  const d={title:val('a-title'),cat:val('a-cat'),body:val('a-body'),pinned:$('#a-pin')?.checked||false,published:val('a-pub')==='1'};
+  if(!can('content'))return toast('Keine Berechtigung.');const d={title:val('a-title'),cat:val('a-cat'),body:val('a-body'),pinned:$('#a-pin')?.checked||false,published:val('a-pub')==='1'};
   if(!d.title||!d.body)return toast('Bitte Titel und Inhalt ausfüllen.');
-  id?await DB.upd('articles',id,d):await DB.add('articles',{...d,up:0,down:0,createdAt:Date.now()});
+  id?await DB.upd('articles',id,d):await DB.add('articles',{...d,up:0,down:0,createdAt:Date.now()});await logActivity('Artikel gespeichert',d.title);
   S.edit=null;toast('Artikel gespeichert.');render();
 };
-window.addUser=async()=>{
+window.addUser=async()=>{if(!isAdmin()&&!can('accounts'))return toast('Keine Berechtigung.');
   const email=val('u-mail'),name=val('u-name'),pw=val('u-pw'),klass=val('u-class'),role=val('u-role');
   if(!email||!name||pw.length<6)return toast('Bitte alle Felder korrekt ausfüllen.');
   try{
     const sec=initializeApp(firebaseConfig,'sec'+Date.now()),sa=getAuth(sec);
     const c=await createUserWithEmailAndPassword(sa,email,pw);
-    await DB.set('users',c.user.uid,{email,name,klass,role,createdAt:Date.now()});
+    await DB.set('users',c.user.uid,{email,name,klass,role:role==='Admin'&&!isAdmin()?'Schüler':role,createdAt:Date.now()});await logActivity('Benutzerkonto angelegt',email);
     await signOut(sa);toast('Account angelegt.');
     ['u-mail','u-name','u-pw'].forEach(i=>$('#'+i).value='');
   }catch(e){toast('Fehler: '+e.code)}
