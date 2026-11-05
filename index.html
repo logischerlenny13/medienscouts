@@ -645,6 +645,7 @@ window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0
 
 window.createTicket=async()=>{
   const subj=val('t-subj'),msg=val('t-msg'),cat=val('t-cat');
+  if(cat==='Passwort'&&!extOn())return toast('Passwort-Anfragen sind momentan deaktiviert.');
   if(!subj||!msg)return toast('Bitte Betreff und Nachricht ausfüllen.');
   const now=Date.now();
   const ref=await DB.add('tickets',{
@@ -820,6 +821,7 @@ const TABS=[
 ];
 
 function adminView(){
+  if(!extOn()&&S.adminTab==='extensions')S.adminTab='settings';
   const nNew=S.tickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
   return `<div class="space-y-6">
@@ -830,7 +832,7 @@ function adminView(){
     <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
       ${TABS.filter(([k])=>k!=='team'||isAdmin()).filter(([k])=>k!=='extensions'||extOn()).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}</button>`).join('')}
     </div>
-    ${S.adminTab==='extensions'?extensionsView():(adminTabs[S.adminTab]||adminTabs.settings)()}
+    ${S.adminTab==='extensions'&&extOn()?extensionsView():(adminTabs[S.adminTab]||adminTabs.settings)()}
   </div>`;
 }
 
@@ -968,6 +970,7 @@ const adminTabs={
         <div>
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
+            ${t.kind==='password'?'<span class="text-xs px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
           </div>
