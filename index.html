@@ -26,7 +26,7 @@
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
@@ -83,7 +83,7 @@ const fmtArticle=t=>String(t||'').split(/\n\s*\n/).map(b=>{
 const isStaff=()=>S.user&&['Admin','Medienscout'].includes(S.user.role);
 const isAdmin=()=>S.user?.role==='Admin';
 const can=p=>isAdmin()||(S.user?.role==='Medienscout'&&S.settings.scoutPermissions?.[p]===true);
-const extOn=()=>S.settings.extensionsEnabled!==false;
+const extOn=()=>true;
 const logActivity=async(action,detail='')=>{if(!S.user)return;try{await DB.add('activity',{uid:S.user.uid,name:S.user.name,role:S.user.role,action,detail,ts:Date.now()})}catch(e){console.warn(e)}};
 const sortPinned=arr=>[...arr].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||(b.createdAt||0)-(a.createdAt||0));
 
@@ -159,7 +159,7 @@ const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 b
       <button class="btn2 ${S.view=='home'||S.view=='article'?'!bg-blue-600 !text-white':''}" onclick="S.view='home';render()"><i data-lucide="book-open" class="w-4 h-4"></i><span class="hidden md:inline">Start & Wissen</span></button>
       ${S.settings.surveys?`<button class="btn2 ${S.view=='surveys'?'!bg-blue-600 !text-white':''}" onclick="S.view='surveys';S.activeSurveyId=null;render()"><i data-lucide="clipboard-list" class="w-4 h-4"></i><span class="hidden md:inline">Umfragen</span></button>`:''}
       ${S.settings.tickets?`<button class="btn2 ${S.view=='tickets'?'!bg-blue-600 !text-white':''}" onclick="S.passwordMode=false;goProtected('tickets')"><i data-lucide="message-square-text" class="w-4 h-4"></i><span class="hidden sm:inline">Tickets</span>${S.myTickets.some(t=>t.unreadStudent)?`<span class="w-2 h-2 rounded-full bg-rose-500"></span>`:''}</button>`:''}
-      ${extOn()&&S.settings.tickets?`<button class="btn2 ${S.passwordMode?'!bg-rose-600 !text-white':''}" onclick="S.passwordMode=true;goProtected('tickets')"><i data-lucide="key-round" class="w-4 h-4"></i><span class="hidden sm:inline">Passwort zurücksetzen</span></button>`:''}
+      ${S.settings.tickets?`<button class="btn2 ${S.passwordMode?'!bg-rose-600 !text-white':''}" onclick="S.passwordMode=true;goProtected('tickets')"><i data-lucide="key-round" class="w-4 h-4"></i><span class="hidden sm:inline">Passwort zurücksetzen</span></button>`:''}
       ${S.settings.apps?`<button class="btn2 ${S.view=='apply'?'!bg-blue-600 !text-white':''}" onclick="goProtected('apply')"><i data-lucide="user-plus" class="w-4 h-4"></i><span class="hidden lg:inline">Bewerbung</span></button>`:''}
       ${isStaff()?`<button class="btn2 ${S.view=='admin'?'!bg-blue-600 !text-white':''}" onclick="S.view='admin';render()"><i data-lucide="shield" class="w-4 h-4 text-blue-500 ${S.view=='admin'?'!text-white':''}"></i><span>Admin</span></button>`:''}
       <button class="btn2" onclick="document.documentElement.classList.toggle('dark')" title="Hell/Dunkel"><i data-lucide="sun-moon" class="w-4 h-4"></i></button>
@@ -485,24 +485,8 @@ function studentTicketsView(){
     <div class="grid lg:grid-cols-5 gap-6">
       <div class="glass p-5 space-y-3 lg:col-span-2 h-fit">
         <h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-blue-500"></i>Neues Ticket starten</h2>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label>
-          <select id="t-cat" class="inp" onchange="const w=document.getElementById('t-password-app-wrap');if(w)w.classList.toggle('hidden',this.value!=='Passwort')"><option value="Allgemeiner Support">Allgemeiner Support</option>${CATS.map(c=>`<option>${c}</option>`).join('')}${extOn()?'<option value="Passwort" '+(S.passwordMode?'selected':'')+'>🔴 Passwort zurücksetzen</option>':''}</select>
-          ${extOn()?`<div id="t-password-app-wrap" class="${S.passwordMode?'':'hidden'}"><label class="text-xs opacity-70 block mb-1">Für welche Anwendung benötigst du Hilfe?</label><select id="t-password-app" class="inp">${(S.settings.passwordApps||[]).map(x=>`<option>${esc(x)}</option>`).join('')}</select></div>`:''}
-        </div>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Betreff (kurz)</label>
-          <input id="t-subj" class="inp" placeholder="z.B. Hilfe bei WhatsApp / Account">
-        </div>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Deine Nachricht</label>
-          <textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz dein Anliegen…"></textarea>
-        </div>
-        <div id="t-prev"></div>
-        <div class="flex items-center justify-between pt-1">
-          <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,'t-prev')"></label>
-          <button class="btn" onclick="createTicket()"><i data-lucide="send" class="w-4 h-4"></i>Ticket öffnen</button>
-        </div>
+        ${S.passwordMode?'<div class="space-y-2"><div class="text-sm font-semibold text-rose-500">🔴 Passwort zurücksetzen</div><label class="text-xs opacity-70 block mb-1">Welche App?</label><select id="t-password-app" class="inp">'+(S.settings.passwordApps||[]).map(x=>'<option>'+esc(x)+'</option>').join('')+'</select><p class="text-xs opacity-60">Wähle nur die App aus. Die Medienscouts kümmern sich anschließend um die Anfrage.</p></div>': '<div><label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label><select id="t-cat" class="inp"><option value="Allgemeiner Support">Allgemeiner Support</option>'+CATS.map(c=>'<option>'+esc(c)+'</option>').join('')+'</select></div><div><label class="text-xs opacity-70 block mb-1">Betreff (kurz)</label><input id="t-subj" class="inp" placeholder="z.B. Hilfe bei einem Account"></div><div><label class="text-xs opacity-70 block mb-1">Deine Nachricht</label><textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz dein Anliegen…"></textarea></div><div id="t-prev"></div><label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,\'t-prev\')"></label>'}
+        <div class="flex justify-end pt-1"><button class="btn" onclick="createTicket()"><i data-lucide="send" class="w-4 h-4"></i>${S.passwordMode?'Anfrage senden':'Ticket öffnen'}</button></div>
       </div>
 
       <div class="space-y-3 lg:col-span-3">
@@ -644,19 +628,16 @@ window.pick=async(inp,prev,max=900)=>{
 window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[130] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full rounded-lg">`;document.body.appendChild(d)};
 
 window.createTicket=async()=>{
-  const subj=val('t-subj'),msg=val('t-msg'),cat=val('t-cat');
-  if(cat==='Passwort'&&!extOn())return toast('Passwort-Anfragen sind momentan deaktiviert.');
-  if(!subj||!msg)return toast('Bitte Betreff und Nachricht ausfüllen.');
+  const passwordRequest=!!S.passwordMode,app=passwordRequest?val('t-password-app'):'';
+  const subj=passwordRequest?'Passwort zurücksetzen: '+app:val('t-subj'),msg=passwordRequest?'Passwort zurücksetzen für die Anwendung: '+app:val('t-msg'),cat=passwordRequest?'Passwort':val('t-cat');
+  if(passwordRequest&&!app)return toast('Bitte eine App auswählen.');
+  if(!passwordRequest&&(!subj||!msg))return toast('Bitte Betreff und Nachricht ausfüllen.');
   const now=Date.now();
-  const ref=await DB.add('tickets',{
-    uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,
-    subject:subj,category:cat,kind:cat==='Passwort'?'password':'support',passwordApp:cat==='Passwort'?val('t-password-app'):'',priority:'Normal',status:'Neu',assignedUid:null,assignedName:null,
-    createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false
-  });
-  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:pendingImg['t-prev']||null,internal:false,ts:now});
-  pendingImg['t-prev']=null;
-  await logActivity('Support-Ticket erstellt',subj+(cat==='Passwort'?' · '+val('t-password-app'):''));toast(cat==='Passwort'?'Passwort-Anfrage wurde gesendet.':'Ticket erstellt.');
-  openChat(ref.id,false);
+  const ref=await DB.add('tickets',{uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,subject:subj,category:cat,kind:passwordRequest?'password':'support',passwordApp:passwordRequest?app:'',priority:'Normal',status:'Neu',assignedUid:null,assignedName:null,createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false});
+  if(!passwordRequest)await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:pendingImg['t-prev']||null,internal:false,ts:now});
+  pendingImg['t-prev']=null;S.passwordMode=false;
+  await logActivity(passwordRequest?'Passwort-Anfrage erstellt':'Support-Ticket erstellt',subj);
+  toast(passwordRequest?'Passwort-Anfrage wurde gesendet.':'Ticket erstellt.');openChat(ref.id,false);
 };
 
 // Admin startet direkt ein Gespräch mit einem Schüler
@@ -794,7 +775,7 @@ window.sendMsg=async(id,asAdmin)=>{
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
   if(asAdmin&&!can('support'))return toast('Keine Berechtigung für Support-Anfragen.');
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
-  if(asAdmin&&text.trim().toLowerCase().startsWith('/passwort')){if(!extOn())return toast('Die Erweiterungen sind deaktiviert.');if(!can('passwordSupport'))return toast('Keine Berechtigung für Passwort-Anfragen.');const t=await DB.get('tickets',id);if(!t?.userEmail)return toast('Keine E-Mail-Adresse hinterlegt.');try{await sendPasswordResetEmail(auth,t.userEmail);await DB.addMsg(id,{from:'scout',senderName:S.user.name+' (Medienscout)',text:'Ich habe eine sichere E-Mail zum Zurücksetzen deines Passworts angefordert. Bitte prüfe dein Schulpostfach und folge dem Link. Teile dein Passwort niemals im Chat.',internal:false,ts:now});await logActivity('Passwort-Reset angefordert',t.userEmail);$('#s-c-msg').value='';toast('Reset-Link wurde per E-Mail angefordert.');return}catch(e){return toast('Fehler: '+e.code)}}
+  if(asAdmin&&text.trim().toLowerCase().startsWith('/passwort'))return toast('Bitte kein Passwort per Chat-Befehl senden. Verwendet für neue Zugangsdaten einen sicheren, freigegebenen Übergabeweg statt des normalen Chatverlaufs.');
   await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(isAdmin()?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(isAdmin()?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now});
   if(!isInternal){
     await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
@@ -817,11 +798,10 @@ const TABS=[
   ['surveys','bar-chart-3','Umfragen & Export'],
   ['board','pin','Schwarzes Brett'],
   ['apps','user-check','Bewerbungen'],
-  ['team','users','Accounts & CSV-Import'],['extensions','sliders','Erweiterungen']
+  ['team','users','Accounts & CSV-Import']
 ];
 
 function adminView(){
-  if(!extOn()&&S.adminTab==='extensions')S.adminTab='settings';
   const nNew=S.tickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
   return `<div class="space-y-6">
@@ -832,7 +812,7 @@ function adminView(){
     <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
       ${TABS.filter(([k])=>k!=='team'||isAdmin()).filter(([k])=>k!=='extensions'||extOn()).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}</button>`).join('')}
     </div>
-    ${S.adminTab==='extensions'&&extOn()?extensionsView():(adminTabs[S.adminTab]||adminTabs.settings)()}
+    ${(adminTabs[S.adminTab]||adminTabs.settings)()}
   </div>`;
 }
 
@@ -843,7 +823,7 @@ const toggleRow=(k,l,d)=>`<div class="glass p-4 flex items-center justify-betwee
   </button>
 </div>`;
 
-window.setSet=async(k,v)=>{if(k==='extensionsEnabled'&&!isAdmin())return toast('Nur Admins dürfen Erweiterungen aktivieren.');if(!can('settings')&&k!=='extensionsEnabled')return toast('Keine Berechtigung für Einstellungen.');await DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});await logActivity('Einstellung geändert',k+' = '+v)};
+window.setSet=async(k,v)=>{if(!can('settings'))return toast('Keine Berechtigung für Einstellungen.');await DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});await logActivity('Einstellung geändert',k+' = '+v)};
 window.saveBrand=async()=>{
   if(!can('settings'))return toast('Keine Berechtigung.');await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
   toast('Texte gespeichert.');
@@ -865,7 +845,7 @@ window.setScoutPermission=async(k,v)=>{if(!isAdmin())return toast('Nur Admins d�
 const adminTabs={
   settings:()=>`<div class="grid md:grid-cols-2 gap-6">
     <div class="space-y-3">
-      <h3 class="font-bold text-base">Module aktivieren / deaktivieren</h3>${isAdmin()?toggleRow('extensionsEnabled','Neue Erweiterungen','Alle neuen Funktionen ein- oder ausschalten'):''}
+      <h3 class="font-bold text-base">Module aktivieren / deaktivieren</h3>
       ${toggleRow('tickets','Support-Ticket-System','Schüler können Tickets erstellen & mit euch chatten')}
       ${toggleRow('apps','Bewerbungs-Modul','Bewerbungsformular für neue Medienscouts freischalten')}
       ${toggleRow('allowReg','Selbst-Registrierung im Login-Fenster','Schüler können sich selbst einen Account anlegen')}
