@@ -2,192 +2,750 @@
 <html lang="de" class="dark">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Medienscouts</title>
+<title>Schulportal · Digitale Hilfe & Medienscouts</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={darkMode:'class'}</script>
 <script src="https://unpkg.com/lucide@0.383.0"></script>
 <style type="text/tailwindcss">
-.glass{@apply bg-white/70 dark:bg-indigo-950/40 backdrop-blur-xl border border-slate-300/50 dark:border-white/10 rounded-2xl shadow-lg}
-.inp{@apply w-full rounded-xl px-3 py-2 bg-white/70 dark:bg-white/10 border border-slate-300/60 dark:border-white/15 outline-none focus:ring-2 ring-violet-500 text-sm}
-.btn{@apply inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition disabled:opacity-50}
-.btn2{@apply inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-500/20 hover:bg-slate-500/30 text-xs font-medium}
-.tab{@apply px-3 py-2 rounded-xl text-sm font-medium hover:bg-violet-500/20}
-.tab.on{@apply bg-violet-600 text-white}
-.prose p{margin:.6rem 0}.prose h3{font-weight:700;font-size:1.1rem;margin-top:1rem}.prose ul{list-style:disc;padding-left:1.4rem}
+.glass{@apply bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-sm}
+.inp{@apply w-full rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 ring-blue-600 text-sm transition}
+.btn{@apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition disabled:opacity-50 cursor-pointer shadow-sm}
+.btn2{@apply inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200/70 dark:bg-slate-800 hover:bg-slate-300/70 dark:hover:bg-slate-700 text-xs font-medium transition cursor-pointer}
+.tab{@apply px-3.5 py-2 rounded-xl text-sm font-medium hover:bg-blue-500/10 transition cursor-pointer}
+.tab.on{@apply bg-blue-600 text-white shadow-sm}
+.prose p{margin:.6rem 0;line-height:1.6}.prose h3{font-weight:700;font-size:1.15rem;margin-top:1.2rem;margin-bottom:.4rem}.prose ul{list-style:disc;padding-left:1.4rem;margin:.6rem 0}
 </style>
 </head>
-<body class="min-h-screen bg-gradient-to-br from-slate-100 via-violet-100 to-sky-100 dark:from-slate-950 dark:via-indigo-950 dark:to-slate-900 text-slate-800 dark:text-slate-100">
-<div id="app"></div><div id="modal"></div><div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100]"></div>
+<body class="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 bg-cover bg-center bg-fixed transition-colors">
+<div id="bg-overlay" class="min-h-screen flex flex-col">
+  <div id="app" class="flex-1 flex flex-col"></div>
+</div>
+<div id="modal"></div>
+<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100]"></div>
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
 
-// ---------- Datenschicht (nur Firestore, kein Storage) ----------
+// ---------- Datenschicht ----------
 const DB={
   watch:(col,cb,order)=>onSnapshot(order?query(collection(db,col),orderBy(order,'desc')):collection(db,col),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
-  add:(col,d)=>addDoc(collection(db,col),d), set:(col,id,d)=>setDoc(doc(db,col,id),d), upd:(col,id,d)=>updateDoc(doc(db,col,id),d),
-  del:(col,id)=>deleteDoc(doc(db,col,id)), get:async(col,id)=>{const s=await getDoc(doc(db,col,id));return s.exists()?{id:s.id,...s.data()}:null},
-  msgs:(code,cb)=>onSnapshot(query(collection(db,'tickets',code,'messages'),orderBy('ts')),s=>cb(s.docs.map(d=>d.data()))),
-  addMsg:(code,m)=>addDoc(collection(db,'tickets',code,'messages'),m)
+  watchMy:(col,uid,cb)=>onSnapshot(query(collection(db,col),where('uid','==',uid)),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt)))),
+  add:(col,d)=>addDoc(collection(db,col),d),
+  set:(col,id,d)=>setDoc(doc(db,col,id),d),
+  upd:(col,id,d)=>updateDoc(doc(db,col,id),d),
+  del:(col,id)=>deleteDoc(doc(db,col,id)),
+  get:async(col,id)=>{const s=await getDoc(doc(db,col,id));return s.exists()?{id:s.id,...s.data()}:null},
+  msgs:(id,cb)=>onSnapshot(query(collection(db,'tickets',id,'messages'),orderBy('ts')),s=>cb(s.docs.map(d=>d.data()))),
+  addMsg:(id,m)=>addDoc(collection(db,'tickets',id,'messages'),m)
 };
 
-const S={settings:{tickets:true,apps:true},needSetup:false,videos:[],articles:[],tickets:[],apps:[],users:[],user:null,login:false,tab:'settings',q:'',cat:'Alle',edit:null,open:null,adminUnsubs:[]};
+const S={
+  settings:{tickets:true,apps:true,allowReg:true,schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''},
+  needSetup:false,videos:[],articles:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],
+  user:null,view:'home',adminTab:'settings',authMode:'login',q:'',cat:'Alle',typeFilter:'Alle',edit:null,open:null,unsubs:[]
+};
+
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const toast=(t)=>{$('#toast').innerHTML=`<div class="glass px-4 py-2 text-sm">${esc(t)}</div>`;setTimeout(()=>$('#toast').innerHTML='',3000)};
+const toast=t=>{$('#toast').innerHTML=`<div class="glass px-4 py-2.5 text-sm font-medium shadow-xl border-blue-500/30">${esc(t)}</div>`;setTimeout(()=>$('#toast').innerHTML='',3200)};
 const icons=()=>lucide.createIcons();
 const val=id=>$('#'+id)?.value.trim()||'';
 const fmt=ts=>new Date(ts).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'});
 const ytId=u=>{const m=u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/);return m?m[1]:/^[\w-]{11}$/.test(u)?u:null};
-const CATS=['Cybermobbing','Datenschutz','Passwörter & Sicherheit','Social Media','Sonstiges'];
-const compress=f=>new Promise((res,rej)=>{const r=new FileReader();r.onerror=rej;r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,900/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.7))};i.onerror=rej;i.src=r.result};r.readAsDataURL(f)});
-const fmtArticle=t=>t.split(/\n\s*\n/).map(b=>{const l=b.split('\n');if(l.every(x=>/^[-*] /.test(x)))return'<ul>'+l.map(x=>`<li>${esc(x.slice(2))}</li>`).join('')+'</ul>';if(/^## /.test(b))return`<h3>${esc(b.slice(3))}</h3>`;return`<p>${esc(b).replace(/\n/g,'<br>')}</p>`}).join('');
+const CATS=['Cybermobbing','Datenschutz','Passwörter & Sicherheit','Social Media','Schul-IT & Accounts','Sonstiges'];
 
-// ---------- Live-Abos (öffentlich) ----------
-onSnapshot(doc(db,'settings','main'),s=>{S.needSetup=!s.exists()||!s.data().setupDone;if(s.exists())S.settings={tickets:true,apps:true,...s.data()};render()},()=>render());
+const compress=(f,max=1000,q=0.75)=>new Promise((res,rej)=>{
+  const r=new FileReader();r.onerror=rej;
+  r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',q))};i.onerror=rej;i.src=r.result};
+  r.readAsDataURL(f);
+});
+
+const fmtArticle=t=>String(t||'').split(/\n\s*\n/).map(b=>{
+  const l=b.split('\n');
+  if(l.every(x=>/^[-*] /.test(x)))return'<ul>'+l.map(x=>`<li>${esc(x.slice(2))}</li>`).join('')+'</ul>';
+  if(/^## /.test(b))return`<h3>${esc(b.slice(3))}</h3>`;
+  return`<p>${esc(b).replace(/\n/g,'<br>')}</p>`;
+}).join('');
+
+const isStaff=()=>S.user&&['Admin','Medienscout'].includes(S.user.role);
+
+// ---------- Live-Abos ----------
+onSnapshot(doc(db,'settings','main'),s=>{
+  S.needSetup=!s.exists()||!s.data().setupDone;
+  if(s.exists())S.settings={...S.settings,...s.data()};
+  applyDesign();render();
+},()=>render());
+
 DB.watch('videos',d=>{S.videos=d;render()},'createdAt');
 DB.watch('articles',d=>{S.articles=d;render()},'createdAt');
+
 onAuthStateChanged(auth,async u=>{
-  S.adminUnsubs.forEach(f=>f());S.adminUnsubs=[];
-  if(!u){S.user=null;render();return}
-  const p=await DB.get('users',u.uid);
-  if(!p){await signOut(auth);toast('Kein Medienscout-Zugang für dieses Konto.');return}
-  S.user={uid:u.uid,...p};S.login=false;
-  const w=(c,k,o)=>S.adminUnsubs.push(DB.watch(c,d=>{S[k]=d;render()},o));
-  w('tickets','tickets','updatedAt');w('applications','apps','createdAt');w('users','users');
+  S.unsubs.forEach(f=>f());S.unsubs=[];
+  if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(S.view!='home')S.view='home';render();return}
+  let p=await DB.get('users',u.uid);
+  if(!p){
+    p={email:u.email,name:u.email.split('@')[0],role:'Schüler',createdAt:Date.now()};
+    await DB.set('users',u.uid,p);
+  }
+  S.user={uid:u.uid,...p};
+  if(S.open=='login')closeModal();
+
+  // Eigene Tickets & Bewerbungen immer abonnieren
+  S.unsubs.push(DB.watchMy('tickets',u.uid,d=>{S.myTickets=d;render()}));
+  S.unsubs.push(DB.watchMy('applications',u.uid,d=>{S.myApps=d;render()}));
+
+  // Wenn Admin oder Medienscout: Alle Daten abonnieren
+  if(['Admin','Medienscout'].includes(p.role)){
+    const w=(c,k,o)=>S.unsubs.push(DB.watch(c,d=>{S[k]=d;render()},o));
+    w('tickets','tickets','updatedAt');
+    w('applications','apps','createdAt');
+    w('users','users');
+  }
   render();
 });
 
+function applyDesign(){
+  document.body.style.backgroundImage=S.settings.bg?`url(${S.settings.bg})`:'none';
+  $('#bg-overlay').className=S.settings.bg?'min-h-screen flex flex-col bg-slate-100/80 dark:bg-slate-950/85 backdrop-blur-sm':'min-h-screen flex flex-col';
+}
+
 // ---------- Rendering ----------
 function render(){
-  const ae=document.activeElement;if(ae&&ae.tagName!='BODY'&&ae.closest('#app')&&['INPUT','TEXTAREA'].includes(ae.tagName)&&!ae.id.startsWith('s-'))return;
-  $('#app').innerHTML=S.user?adminView():publicView();
-  if(S.login)loginModal();else if(!S.open)$('#modal').innerHTML='';
+  const ae=document.activeElement;
+  if(ae&&ae.tagName!='BODY'&&ae.closest('#app')&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)&&!ae.id.startsWith('s-'))return;
+  $('#app').innerHTML=nav()+`<main class="max-w-5xl w-full mx-auto px-4 py-8 flex-1">${ S.view=='admin'&&isStaff() ? adminView() : S.view=='tickets'&&S.user ? studentTicketsView() : S.view=='apply'&&S.user ? studentApplyView() : homeView() }</main>`+footer();
   icons();
 }
-const banner=t=>`<div class="glass p-6 flex items-center gap-3 text-amber-500"><i data-lucide="palmtree"></i><span class="font-medium">${t}</span></div>`;
-const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none"><div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-<a href="#" class="font-bold text-lg flex items-center gap-2"><i data-lucide="shield-check" class="text-violet-500"></i>Medienscouts</a>
-<nav class="hidden md:flex gap-4 text-sm ml-4">${!S.user?['videos:Videos','artikel:Artikel','support:Support','bewerbung:Bewerbung'].map(x=>{const[a,b]=x.split(':');return`<a class="hover:text-violet-500" href="#${a}">${b}</a>`}).join(''):''}</nav>
-<div class="ml-auto flex gap-2"><button class="btn2" onclick="document.documentElement.classList.toggle('dark')"><i data-lucide="sun-moon" class="w-4 h-4"></i></button>
-${S.user?`<span class="hidden sm:block text-sm self-center">${esc(S.user.name)}</span><button class="btn2" onclick="logout()"><i data-lucide="log-out" class="w-4 h-4"></i>Logout</button>`:`<button class="btn" onclick="S.login=true;render()"><i data-lucide="lock" class="w-4 h-4"></i>Scouts Login</button>`}</div></div></header>`;
 
-function publicView(){
-  return nav()+`<main class="max-w-6xl mx-auto px-4 py-8 space-y-14">
-<section class="text-center py-8"><h1 class="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-violet-500 to-sky-400 bg-clip-text text-transparent">Wir sind die Medienscouts</h1><p class="mt-3 opacity-80">Tipps, Anleitungen und Hilfe rund um Internet, Social Media und Sicherheit – von Schülern für Schüler.</p></section>
-<section id="videos"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="youtube" class="text-red-500"></i>Videothek</h2><div class="grid md:grid-cols-2 gap-5">
-${S.videos.map(v=>`<div class="glass overflow-hidden"><div class="aspect-video"><iframe class="w-full h-full" src="https://www.youtube.com/embed/${esc(v.vid)}" allowfullscreen loading="lazy"></iframe></div><div class="p-4"><h3 class="font-semibold">${esc(v.title)}</h3><p class="text-sm opacity-75 mt-1">${esc(v.desc)}</p></div></div>`).join('')||'<p class="opacity-60">Noch keine Videos.</p>'}</div></section>
-<section id="artikel"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="book-open" class="text-sky-500"></i>Artikel &amp; Anleitungen</h2>
-<div class="flex flex-wrap gap-2 mb-4"><input id="s-q" class="inp !w-64" placeholder="Suchen…" value="${esc(S.q)}" oninput="S.q=this.value;grid()">
-<div class="flex flex-wrap gap-2">${['Alle',...CATS].map(c=>`<button class="tab ${S.cat==c?'on':''}" onclick="S.cat='${c}';render()">${c}</button>`).join('')}</div></div><div id="grid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">${artGrid()}</div></section>
-<section id="support"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="life-buoy" class="text-emerald-500"></i>Kummerkasten &amp; Hilfe</h2>
-${S.settings.tickets?`<div class="grid md:grid-cols-2 gap-5"><div class="glass p-5 space-y-3"><h3 class="font-semibold">Neues anonymes Ticket</h3>
-<select id="t-cat" class="inp">${CATS.map(c=>`<option>${c}</option>`).join('')}</select><textarea id="t-msg" rows="5" class="inp" placeholder="Was ist passiert? Du bleibst anonym."></textarea>
-<div id="t-prev"></div><div class="flex gap-2"><label class="btn2 cursor-pointer"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,'t-prev')"></label><button class="btn" onclick="createTicket()"><i data-lucide="send" class="w-4 h-4"></i>Absenden</button></div></div>
-<div class="glass p-5 space-y-3"><h3 class="font-semibold">Ticket-Status prüfen</h3><p class="text-sm opacity-75">Gib deinen Code ein (z. B. MS-4829).</p><input id="t-code" class="inp uppercase" placeholder="MS-0000"><button class="btn" onclick="openChat(val('t-code').toUpperCase(),false)"><i data-lucide="message-circle" class="w-4 h-4"></i>Zum Chat</button></div></div>`
-:banner('Support aktuell in den Ferien / geschlossen.')}</section>
-<section id="bewerbung"><h2 class="text-2xl font-bold mb-4 flex gap-2 items-center"><i data-lucide="user-plus" class="text-pink-500"></i>Werde Medienscout</h2>
-${S.settings.apps?`<div class="glass p-5 grid md:grid-cols-2 gap-3 max-w-3xl"><input id="a-name" class="inp" placeholder="Name"><input id="a-class" class="inp" placeholder="Klasse"><textarea id="a-mot" rows="4" class="inp md:col-span-2" placeholder="Warum möchtest du Medienscout werden?"></textarea><button class="btn w-fit" onclick="sendApp()"><i data-lucide="send" class="w-4 h-4"></i>Bewerben</button></div>`:banner('Die Bewerbungsphase ist aktuell geschlossen.')}</section>
-</main><footer class="text-center text-xs opacity-60 py-8">Medienscouts · Schulprojekt</footer>`;
+const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 border-t-0">
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+    <button onclick="S.view='home';render()" class="font-bold text-base sm:text-lg flex items-center gap-2.5 text-left">
+      ${S.settings.logo?`<img src="${S.settings.logo}" class="h-8 w-8 rounded-lg object-contain bg-white/10">`:`<div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center"><i data-lucide="graduation-cap" class="w-5 h-5"></i></div>`}
+      <div>
+        <div class="leading-tight">${esc(S.settings.schoolName)}</div>
+        <div class="text-[11px] font-normal opacity-60 hidden sm:block">Unterstützt durch die Medienscouts</div>
+      </div>
+    </button>
+
+    <div class="ml-auto flex items-center gap-2">
+      <button class="btn2" onclick="S.view='home';render()" title="Startseite"><i data-lucide="book-open" class="w-4 h-4"></i><span class="hidden md:inline">Artikel & Videos</span></button>
+      ${S.settings.tickets?`<button class="btn2 ${S.view=='tickets'?'!bg-blue-600 !text-white':''}" onclick="goProtected('tickets')"><i data-lucide="message-square-text" class="w-4 h-4"></i><span class="hidden sm:inline">Meine Tickets</span></button>`:''}
+      ${S.settings.apps?`<button class="btn2 ${S.view=='apply'?'!bg-blue-600 !text-white':''}" onclick="goProtected('apply')"><i data-lucide="user-plus" class="w-4 h-4"></i><span class="hidden sm:inline">Bewerbung</span></button>`:''}
+      ${isStaff()?`<button class="btn2 ${S.view=='admin'?'!bg-blue-600 !text-white':''}" onclick="S.view='admin';render()"><i data-lucide="shield" class="w-4 h-4 text-blue-500 ${S.view=='admin'?'!text-white':''}"></i><span>Admin</span></button>`:''}
+      <button class="btn2" onclick="document.documentElement.classList.toggle('dark')" title="Design wechseln"><i data-lucide="sun-moon" class="w-4 h-4"></i></button>
+      ${S.user
+        ? `<div class="flex items-center gap-1.5 pl-1 border-l border-slate-300 dark:border-slate-700">
+             <span class="hidden lg:inline text-xs font-medium px-2">${esc(S.user.name)}</span>
+             <button class="btn2 !text-rose-500" onclick="logout()" title="Abmelden"><i data-lucide="log-out" class="w-4 h-4"></i></button>
+           </div>`
+        : `<button class="btn !py-2 !px-3.5" onclick="openAuth('login')"><i data-lucide="user" class="w-4 h-4"></i>Anmelden</button>`}
+    </div>
+  </div>
+</header>`;
+
+const footer=()=>`<footer class="text-center text-xs opacity-60 py-6 border-t border-slate-200/60 dark:border-slate-800/60 mt-12">${esc(S.settings.schoolName)} · Schulportal & Medienscouts</footer>`;
+
+// ---------- Öffentliche Startseite (Schul-Look, Fokus auf Wissen + Aktions-Karten unten) ----------
+function homeView(){
+  return `<div class="space-y-10">
+    <!-- Dezenter Schul-Header -->
+    <section class="glass p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-l-4 border-l-blue-600">
+      <div>
+        <span class="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Informationen & Selbsthilfe</span>
+        <h1 class="text-2xl sm:text-3xl font-bold mt-1">${esc(S.settings.schoolName)}</h1>
+        <p class="text-sm opacity-75 mt-1">${esc(S.settings.subTitle)}</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        ${S.settings.tickets?`<button class="btn" onclick="goProtected('tickets')"><i data-lucide="message-square-plus" class="w-4 h-4"></i>Hilfe-Ticket öffnen</button>`:''}
+        ${S.settings.apps?`<button class="btn2 !py-2.5 !px-4" onclick="goProtected('apply')"><i data-lucide="user-plus" class="w-4 h-4"></i>Bei den Medienscouts mitmachen</button>`:''}
+      </div>
+    </section>
+
+    <!-- Kombinierter Bereich: Artikel, Anleitungen & Videos -->
+    <section class="space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="library" class="w-5 h-5 text-blue-600"></i>Artikel, Anleitungen & Videos</h2>
+        <div class="flex gap-2">
+          <div class="relative flex-1 sm:w-64">
+            <input id="s-q" class="inp !pl-9" placeholder="Thema suchen…" value="${esc(S.q)}" oninput="S.q=this.value;updateFeed()">
+            <i data-lucide="search" class="w-4 h-4 opacity-50 absolute left-3 top-3"></i>
+          </div>
+          <select id="s-type" class="inp !w-auto" onchange="S.typeFilter=this.value;updateFeed()">
+            ${['Alle','Artikel','Videos'].map(t=>`<option ${S.typeFilter==t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-1.5">
+        ${['Alle',...CATS].map(c=>`<button class="tab !text-xs !py-1.5 !px-3 ${S.cat==c?'on':''}" onclick="S.cat='${c}';render()">${c}</button>`).join('')}
+      </div>
+
+      <div id="feed-grid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+        ${feedItems()}
+      </div>
+    </section>
+
+    <!-- Untere Aktions-Boxen (Account-pflichtig, klar & minimalistisch) -->
+    <section class="pt-4 border-t border-slate-200 dark:border-slate-800">
+      <h2 class="text-lg font-bold mb-4">Persönlicher Bereich (mit Schul-Account)</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="glass p-6 flex flex-col justify-between gap-4">
+          <div class="space-y-2">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center"><i data-lucide="messages-square" class="w-5 h-5"></i></div>
+            <h3 class="font-bold text-lg">Ticket schreiben & Live-Chat</h3>
+            <p class="text-sm opacity-75">Du hast ein Problem auf Social Media, mit deinem Schul-Account oder brauchst Rat? Schreib uns direkt über dein Konto und chatte mit einem Medienscout.</p>
+          </div>
+          ${S.settings.tickets
+            ? `<button class="btn w-full sm:w-fit" onclick="goProtected('tickets')"><i data-lucide="arrow-right" class="w-4 h-4"></i>${S.user?'Zu meinen Tickets':'Anmelden & Ticket schreiben'}</button>`
+            : `<div class="text-xs text-amber-500 font-medium flex items-center gap-1.5"><i data-lucide="clock" class="w-4 h-4"></i>Das Ticket-System ist aktuell deaktiviert.</div>`}
+        </div>
+
+        <div class="glass p-6 flex flex-col justify-between gap-4">
+          <div class="space-y-2">
+            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center"><i data-lucide="award" class="w-5 h-5"></i></div>
+            <h3 class="font-bold text-lg">Als Medienscout bewerben</h3>
+            <p class="text-sm opacity-75">Du kennst dich gut mit Apps, Games oder Technik aus und möchtest Mitschülern helfen? Bewirb dich direkt mit deinem Schul-Account für unser Team.</p>
+          </div>
+          ${S.settings.apps
+            ? `<button class="btn2 !py-2.5 !px-4 w-full sm:w-fit" onclick="goProtected('apply')"><i data-lucide="user-check" class="w-4 h-4"></i>${S.user?'Zur Bewerbung':'Anmelden & bewerben'}</button>`
+            : `<div class="text-xs text-amber-500 font-medium flex items-center gap-1.5"><i data-lucide="clock" class="w-4 h-4"></i>Die Bewerbungsphase ist aktuell geschlossen.</div>`}
+        </div>
+      </div>
+    </section>
+  </div>`;
 }
-const artGrid=()=>{const q=S.q.toLowerCase();const l=S.articles.filter(a=>(S.cat=='Alle'||a.cat==S.cat)&&(a.title+a.body).toLowerCase().includes(q));
-  return l.map(a=>`<button onclick="openArt('${a.id}')" class="glass p-4 text-left hover:scale-[1.02] transition"><span class="text-xs px-2 py-0.5 rounded-full bg-violet-500/20">${esc(a.cat)}</span><h3 class="font-semibold mt-2">${esc(a.title)}</h3><p class="text-sm opacity-70 mt-1 line-clamp-3">${esc(a.body.slice(0,140))}…</p></button>`).join('')||'<p class="opacity-60">Keine Artikel gefunden.</p>'};
-window.grid=()=>{$('#grid').innerHTML=artGrid()};
 
-// ---------- Modals ----------
-const modal=h=>{$('#modal').innerHTML=`<div class="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 w-full max-w-2xl max-h-[90vh] overflow-auto p-6 relative"><button class="absolute top-3 right-3 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>${h}</div></div>`;icons()};
+function feedItems(){
+  const q=S.q.toLowerCase();
+  const arts=S.typeFilter=='Videos'?[]:S.articles.filter(a=>a.published!==false&&(S.cat=='Alle'||a.cat==S.cat)&&(a.title+a.body).toLowerCase().includes(q)).map(a=>({...a,_type:'art'}));
+  const vids=S.typeFilter=='Artikel'?[]:S.videos.filter(v=>v.published!==false&&(S.cat=='Alle'||(v.cat||'Sonstiges')==S.cat)&&(v.title+v.desc).toLowerCase().includes(q)).map(v=>({...v,_type:'vid'}));
+  const all=[...arts,...vids].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+
+  if(!all.length)return `<div class="glass p-8 text-center opacity-60 sm:col-span-2 lg:col-span-3">Keine passenden Beiträge oder Videos gefunden.</div>`;
+
+  return all.map(item=>item._type=='vid'
+    ? `<div class="glass overflow-hidden flex flex-col justify-between">
+         <div>
+           <div class="aspect-video bg-black"><iframe class="w-full h-full" src="https://www.youtube.com/embed/${esc(item.vid)}" allowfullscreen loading="lazy"></iframe></div>
+           <div class="p-4">
+             <div class="flex items-center gap-2 mb-1.5">
+               <span class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-red-500/15 text-red-500 flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>Video</span>
+               <span class="text-[11px] opacity-60">${esc(item.cat||'Allgemein')}</span>
+             </div>
+             <h3 class="font-bold text-base">${esc(item.title)}</h3>
+             <p class="text-xs opacity-75 mt-1 line-clamp-2">${esc(item.desc)}</p>
+           </div>
+         </div>
+       </div>`
+    : `<button onclick="openArt('${item.id}')" class="glass p-5 text-left hover:border-blue-500/50 transition flex flex-col justify-between">
+         <div>
+           <div class="flex items-center gap-2 mb-2">
+             <span class="text-[11px] font-medium px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-blue-400">Anleitung / Artikel</span>
+             <span class="text-[11px] opacity-60">${esc(item.cat)}</span>
+           </div>
+           <h3 class="font-bold text-base">${esc(item.title)}</h3>
+           <p class="text-xs opacity-75 mt-2 line-clamp-3 leading-relaxed">${esc(item.body.replace(/#/g,'').slice(0,150))}…</p>
+         </div>
+         <div class="text-xs text-blue-600 dark:text-blue-400 font-medium mt-4 flex items-center gap-1">Weiterlesen <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></div>
+       </button>`
+  ).join('');
+}
+window.updateFeed=()=>{$('#feed-grid').innerHTML=feedItems();icons()};
+
+// ---------- Schüler-Ansicht: Meine Tickets & Neues Ticket ----------
+const badge=s=>`<span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${{Neu:'bg-blue-500/15 text-blue-500','In Bearbeitung':'bg-amber-500/15 text-amber-500','Gelöst':'bg-emerald-500/15 text-emerald-500','Offen':'bg-blue-500/15 text-blue-500','Angenommen':'bg-emerald-500/15 text-emerald-500','Abgelehnt':'bg-rose-500/15 text-rose-500'}[s]||'bg-slate-500/20'}">${esc(s)}</span>`;
+
+function studentTicketsView(){
+  if(!S.settings.tickets)return `<div class="glass p-6 text-amber-500">Das Ticket-System ist momentan deaktiviert.</div>`;
+  return `<div class="space-y-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Meine Support-Tickets</h1>
+        <p class="text-sm opacity-75">Alle deine Anfragen sind fest in deinem Account gespeichert.</p>
+      </div>
+      <button class="btn2" onclick="S.view='home';render()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Zurück</button>
+    </div>
+
+    <div class="grid lg:grid-cols-5 gap-6">
+      <!-- Neues Ticket erstellen -->
+      <div class="glass p-5 space-y-3 lg:col-span-2 h-fit">
+        <h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-blue-500"></i>Neues Ticket starten</h2>
+        <div>
+          <label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label>
+          <select id="t-cat" class="inp">${CATS.map(c=>`<option>${c}</option>`).join('')}</select>
+        </div>
+        <div>
+          <label class="text-xs opacity-70 block mb-1">Betreff (kurz)</label>
+          <input id="t-subj" class="inp" placeholder="z.B. Frage zu Instagram-Account">
+        </div>
+        <div>
+          <label class="text-xs opacity-70 block mb-1">Deine Nachricht</label>
+          <textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz, wobei wir dir helfen können…"></textarea>
+        </div>
+        <div id="t-prev"></div>
+        <div class="flex items-center justify-between pt-1">
+          <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,'t-prev')"></label>
+          <button class="btn" onclick="createTicket()"><i data-lucide="send" class="w-4 h-4"></i>Ticket öffnen</button>
+        </div>
+      </div>
+
+      <!-- Ticket-Liste des Schülers -->
+      <div class="space-y-3 lg:col-span-3">
+        <h2 class="font-bold text-base">Bisherige Unterhaltungen (${S.myTickets.length})</h2>
+        ${S.myTickets.map(t=>`<button onclick="openChat('${t.id}',false)" class="glass w-full p-4 text-left hover:border-blue-500/50 transition flex items-center justify-between gap-3">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-sm">${esc(t.subject||t.category)}</span>
+              ${badge(t.status)}
+              ${t.unreadStudent?`<span class="text-[11px] bg-blue-600 text-white px-2 py-0.5 rounded-full">Neue Antwort</span>`:''}
+            </div>
+            <div class="text-xs opacity-60">${esc(t.category)} · Letzte Aktivität: ${fmt(t.updatedAt||t.createdAt)}</div>
+          </div>
+          <i data-lucide="message-circle" class="w-5 h-5 text-blue-500 shrink-0"></i>
+        </button>`).join('') || `<div class="glass p-8 text-center opacity-60 text-sm">Du hast noch keine Tickets erstellt.</div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ---------- Schüler-Ansicht: Bewerbung ----------
+function studentApplyView(){
+  if(!S.settings.apps)return `<div class="glass p-6 text-amber-500">Die Bewerbungsphase ist aktuell geschlossen.</div>`;
+  const existing=S.myApps[0];
+  return `<div class="max-w-2xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Bewerbung als Medienscout</h1>
+        <p class="text-sm opacity-75">Angemeldet als <b>${esc(S.user.name)}</b> (${esc(S.user.email)})</p>
+      </div>
+      <button class="btn2" onclick="S.view='home';render()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Zurück</button>
+    </div>
+
+    ${existing
+      ? `<div class="glass p-6 space-y-3">
+           <div class="flex items-center justify-between">
+             <h2 class="font-bold text-lg">Status deiner Bewerbung</h2>
+             ${badge(existing.status)}
+           </div>
+           <p class="text-sm opacity-80">Eingereicht am ${fmt(existing.createdAt)} · Klasse ${esc(existing.klass)}</p>
+           <div class="p-3.5 rounded-xl bg-slate-500/10 text-sm">${esc(existing.motivation)}</div>
+           ${existing.status=='Angenommen'?`<div class="p-3 rounded-xl bg-emerald-500/15 text-emerald-500 text-sm font-medium">Herzlichen Glückwunsch! Deine Bewerbung wurde angenommen.</div>`:''}
+         </div>`
+      : `<div class="glass p-6 space-y-4">
+           <div>
+             <label class="text-xs opacity-70 block mb-1">Dein Vor- und Nachname</label>
+             <input id="a-name" class="inp" value="${esc(S.user.name)}">
+           </div>
+           <div>
+             <label class="text-xs opacity-70 block mb-1">Deine Klasse / Jahrgangsstufe</label>
+             <input id="a-class" class="inp" placeholder="z.B. 8b oder EF">
+           </div>
+           <div>
+             <label class="text-xs opacity-70 block mb-1">Warum möchtest du Medienscout werden?</label>
+             <textarea id="a-mot" rows="5" class="inp" placeholder="Erzähl uns kurz, was dich interessiert und warum du im Team helfen möchtest…"></textarea>
+           </div>
+           <button class="btn" onclick="sendApp()"><i data-lucide="send" class="w-4 h-4"></i>Bewerbung absenden</button>
+         </div>`}
+  </div>`;
+}
+
+// ---------- Normaler Login / Registrierung Modal ----------
+window.goProtected=target=>{
+  if(!S.user){S.pendingView=target;openAuth('login');return}
+  S.view=target;render();
+};
+
+const modal=h=>{$('#modal').innerHTML=`<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 w-full max-w-xl max-h-[90vh] overflow-auto p-6 relative">${h}</div></div>`;icons()};
 let unsubMsg=null;
-window.closeModal=()=>{S.login=false;S.open=null;unsubMsg&&unsubMsg();unsubMsg=null;$('#modal').innerHTML=''};
-window.openArt=id=>{const a=S.articles.find(x=>x.id==id);S.open='art';modal(`<span class="text-xs px-2 py-0.5 rounded-full bg-violet-500/20">${esc(a.cat)}</span><h2 class="text-2xl font-bold mt-2">${esc(a.title)}</h2><div class="prose mt-3">${fmtArticle(a.body)}</div>`)};
-function loginModal(){modal(`<h2 class="text-xl font-bold mb-4 flex gap-2"><i data-lucide="lock"></i>Scouts Login</h2><div class="space-y-3"><input id="l-mail" type="email" class="inp" placeholder="E-Mail" value="${S.needSetup?'admin@schule.de':''}"><input id="l-pw" type="password" class="inp" placeholder="Passwort" value="${S.needSetup?'scout123':''}" onkeydown="if(event.key=='Enter')doLogin()">
-<button class="btn" onclick="doLogin()">Anmelden</button>
-${S.needSetup?`<div class="mt-4 p-3 rounded-xl bg-amber-500/15 text-sm">Ersteinrichtung: Noch kein Admin vorhanden. Mit E-Mail &amp; Passwort oben wird der erste Admin angelegt und Demo-Daten geladen.<br><button class="btn mt-2" onclick="setup()">Ersten Admin anlegen</button></div>`:''}</div>`)}
-window.doLogin=async()=>{try{await signInWithEmailAndPassword(auth,val('l-mail'),val('l-pw'))}catch(e){toast('Login fehlgeschlagen')}};
+window.closeModal=()=>{S.open=null;unsubMsg&&unsubMsg();unsubMsg=null;$('#modal').innerHTML=''};
+
+window.openArt=id=>{
+  const a=S.articles.find(x=>x.id==id);if(!a)return;
+  S.open='art';
+  modal(`<button class="absolute top-4 right-4 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
+    <span class="text-xs font-medium px-2.5 py-0.5 rounded-md bg-blue-500/15 text-blue-500">${esc(a.cat)}</span>
+    <h2 class="text-2xl font-bold mt-2">${esc(a.title)}</h2>
+    <div class="text-xs opacity-50 mt-1">Veröffentlicht am ${fmt(a.createdAt)}</div>
+    <div class="prose mt-4 border-t border-slate-200 dark:border-slate-800 pt-4 text-sm">${fmtArticle(a.body)}</div>`);
+};
+
+window.openAuth=(mode='login')=>{
+  S.authMode=mode;S.open='login';
+  const regAllowed=S.settings.allowReg;
+  modal(`<button class="absolute top-4 right-4 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
+    <div class="max-w-sm mx-auto py-2 space-y-5">
+      <div class="text-center space-y-1">
+        <div class="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-2"><i data-lucide="user-check" class="w-6 h-6"></i></div>
+        <h2 class="text-xl font-bold">${mode=='login'?'Bei deinem Schul-Account anmelden':'Neues Konto erstellen'}</h2>
+        <p class="text-xs opacity-70">Melde dich mit deiner Schul-E-Mail-Adresse an, um Tickets zu schreiben oder dich zu bewerben.</p>
+      </div>
+
+      ${regAllowed?`<div class="grid grid-cols-2 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-xs font-medium">
+        <button class="py-2 rounded-lg ${mode=='login'?'bg-white dark:bg-slate-900 shadow-xs':''}" onclick="openAuth('login')">Anmelden</button>
+        <button class="py-2 rounded-lg ${mode=='reg'?'bg-white dark:bg-slate-900 shadow-xs':''}" onclick="openAuth('reg')">Registrieren</button>
+      </div>`:''}
+
+      <div class="space-y-3">
+        ${mode=='reg'?`<div><label class="text-xs opacity-70 block mb-1">Vor- und Nachname</label><input id="l-name" class="inp" placeholder="Max Mustermann"></div>`:''}
+        <div>
+          <label class="text-xs opacity-70 block mb-1">E-Mail-Adresse</label>
+          <input id="l-mail" type="email" class="inp" placeholder="name@schule.de" value="${S.needSetup?'admin@schule.de':''}">
+        </div>
+        <div>
+          <label class="text-xs opacity-70 block mb-1">Passwort</label>
+          <input id="l-pw" type="password" class="inp" placeholder="••••••••" value="${S.needSetup?'scout123':''}" onkeydown="if(event.key=='Enter')submitAuth()">
+        </div>
+        <button class="btn w-full" onclick="submitAuth()">${mode=='login'?'Anmelden':'Konto erstellen'}</button>
+      </div>
+
+      ${S.needSetup?`<div class="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs space-y-2">
+        <b>Ersteinrichtung:</b> Noch kein Admin-Konto in der Datenbank. Klicke hier, um mit der E-Mail oben den ersten Haupt-Admin anzulegen:
+        <button class="btn w-full !bg-amber-600 hover:!bg-amber-500" onclick="setup()">Ersten Admin & Startdaten anlegen</button>
+      </div>`:''}
+    </div>`);
+};
+
+window.submitAuth=async()=>{
+  const email=val('l-mail'),pw=val('l-pw'),name=val('l-name');
+  if(!email||!pw)return toast('Bitte E-Mail und Passwort eingeben.');
+  try{
+    if(S.authMode=='reg'){
+      if(!S.settings.allowReg)return toast('Selbst-Registrierung ist deaktiviert.');
+      if(!name)return toast('Bitte gib deinen Namen an.');
+      const c=await createUserWithEmailAndPassword(auth,email,pw);
+      await DB.set('users',c.user.uid,{email,name,role:'Schüler',createdAt:Date.now()});
+    }else{
+      await signInWithEmailAndPassword(auth,email,pw);
+    }
+    closeModal();
+    if(S.pendingView){S.view=S.pendingView;S.pendingView=null;render()}
+  }catch(e){toast('Anmeldung fehlgeschlagen ('+e.code+')')}
+};
 window.logout=()=>signOut(auth);
 
-// ---------- Support-Chat ----------
+// ---------- Ticket & Chat System ----------
 let pendingImg={};
-window.pick=async(inp,prev)=>{if(!inp.files[0])return;pendingImg[prev]=await compress(inp.files[0]);$('#'+prev).innerHTML=`<img src="${pendingImg[prev]}" class="h-20 rounded-lg">`;inp.value=''};
-window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[90] bg-black/90 flex items-center justify-center p-4';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full">`;document.body.appendChild(d)};
+window.pick=async(inp,prev,max=900)=>{
+  if(!inp.files[0])return;
+  pendingImg[prev]=await compress(inp.files[0],max);
+  $('#'+prev).innerHTML=`<div class="relative inline-block mt-1"><img src="${pendingImg[prev]}" class="h-20 rounded-lg border border-slate-500/30"><button class="btn2 !p-1 absolute -top-2 -right-2" onclick="pendingImg['${prev}']=null;$('#${prev}').innerHTML=''"><i data-lucide="x" class="w-3 h-3"></i></button></div>`;
+  inp.value='';icons();
+};
+window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[90] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full rounded-lg">`;document.body.appendChild(d)};
+
 window.createTicket=async()=>{
-  const msg=val('t-msg');if(!msg)return toast('Bitte eine Nachricht schreiben.');
-  let code;do{code='MS-'+(1000+Math.floor(Math.random()*9000))}while(await DB.get('tickets',code));
-  const now=Date.now();await DB.set('tickets',code,{category:val('t-cat'),status:'Neu',createdAt:now,updatedAt:now,unread:true});
-  await DB.addMsg(code,{from:'student',text:msg,img:pendingImg['t-prev']||null,ts:now});pendingImg={};
-  openChat(code,false,true);
+  const subj=val('t-subj'),msg=val('t-msg'),cat=val('t-cat');
+  if(!subj||!msg)return toast('Bitte Betreff und Nachricht ausfüllen.');
+  const now=Date.now();
+  const ref=await DB.add('tickets',{
+    uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,
+    subject:subj,category:cat,status:'Neu',createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false
+  });
+  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:pendingImg['t-prev']||null,ts:now});
+  pendingImg['t-prev']=null;
+  toast('Ticket wurde erstellt.');
+  openChat(ref.id,false);
 };
-const badge=s=>`<span class="text-xs px-2 py-0.5 rounded-full ${{Neu:'bg-rose-500/20 text-rose-500','In Bearbeitung':'bg-amber-500/20 text-amber-500','Gelöst':'bg-emerald-500/20 text-emerald-500'}[s]}">${s}</span>`;
-window.openChat=async(code,admin,fresh)=>{
-  const t=await DB.get('tickets',code).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
+
+window.openChat=async(id,asAdmin)=>{
+  const t=await DB.get('tickets',id).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
   S.open='chat';pendingImg['c-prev']=null;
-  modal(`<div class="space-y-3">${fresh?`<div class="p-3 rounded-xl bg-emerald-500/15 text-sm">Ticket erstellt! Merke dir deinen Code: <b class="text-lg">${code}</b></div>`:''}
-  <div class="flex items-center gap-2 flex-wrap"><h2 class="text-xl font-bold">${code}</h2><span id="c-st">${badge(t.status)}</span><span class="text-sm opacity-70">${esc(t.category)}</span>
-  ${admin?`<select class="inp !w-auto ml-auto" onchange="DB_upd('${code}',this.value)">${['Neu','In Bearbeitung','Gelöst'].map(s=>`<option ${s==t.status?'selected':''}>${s}</option>`).join('')}</select>`:''}</div>
-  <div id="c-list" class="h-72 overflow-auto space-y-2 p-2 rounded-xl bg-slate-500/10"></div><div id="c-prev"></div>
-  <div class="flex gap-2"><label class="btn2 cursor-pointer"><i data-lucide="image" class="w-4 h-4"></i><input type="file" accept="image/*" hidden onchange="pick(this,'c-prev')"></label><input id="s-c-msg" class="inp" placeholder="Nachricht…" onkeydown="if(event.key=='Enter')sendMsg('${code}',${admin})"><button class="btn" onclick="sendMsg('${code}',${admin})"><i data-lucide="send" class="w-4 h-4"></i></button></div></div>`);
-  unsubMsg&&unsubMsg();unsubMsg=DB.msgs(code,ms=>{const l=$('#c-list');if(!l)return;const me=admin?'scout':'student';
-    l.innerHTML=ms.map(m=>`<div class="flex ${m.from==me?'justify-end':''}"><div class="max-w-[80%] px-3 py-2 rounded-2xl text-sm ${m.from==me?'bg-violet-600 text-white':'bg-white/80 dark:bg-white/10'}"><div class="text-[10px] opacity-70">${m.from=='scout'?'Medienscout':'Schüler'} · ${fmt(m.ts)}</div>${m.text?esc(m.text).replace(/\n/g,'<br>'):''}${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-1 rounded-lg max-h-40 cursor-zoom-in">`:''}</div></div>`).join('');l.scrollTop=l.scrollHeight});
-};
-window.DB_upd=async(code,st)=>{await DB.upd('tickets',code,{status:st,updatedAt:Date.now(),unread:false});$('#c-st').innerHTML=badge(st)};
-window.sendMsg=async(code,admin)=>{const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
-  await DB.addMsg(code,{from:admin?'scout':'student',text,img,ts:Date.now()});
-  await DB.upd('tickets',code,admin?{updatedAt:Date.now()}:{updatedAt:Date.now(),unread:true}).catch(()=>{});
-  $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML=''};
-window.sendApp=async()=>{const n=val('a-name'),c=val('a-class'),m=val('a-mot');if(!n||!c||!m)return toast('Bitte alles ausfüllen.');
-  await DB.add('applications',{name:n,klass:c,motivation:m,status:'Offen',createdAt:Date.now()});['a-name','a-class','a-mot'].forEach(i=>$('#'+i).value='');toast('Bewerbung gesendet – danke!')};
+  if(asAdmin&&t.unreadAdmin)DB.upd('tickets',id,{unreadAdmin:false});
+  if(!asAdmin&&t.unreadStudent)DB.upd('tickets',id,{unreadStudent:false});
 
-// ---------- Admin ----------
-const TABS=[['settings','sliders-horizontal','Einstellungen'],['content','film','Content'],['tickets','inbox','Support-Desk'],['apps','users','Bewerbungen'],['team','key-round','Team']];
+  modal(`<button class="absolute top-4 right-4 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
+    <div class="space-y-3 pr-8">
+      <div class="flex items-center gap-2 flex-wrap">
+        <h2 class="text-lg font-bold">${esc(t.subject||t.category)}</h2>
+        <span id="c-st">${badge(t.status)}</span>
+      </div>
+      <div class="text-xs opacity-70 flex flex-wrap gap-3 items-center">
+        <span>Kategorie: <b>${esc(t.category)}</b></span>
+        <span>Schüler: <b>${esc(t.userName||'Unbekannt')}</b> (${esc(t.userEmail||'-')})</span>
+        ${asAdmin?`<select class="inp !w-auto !py-1 !px-2 text-xs ml-auto" onchange="updStatus('${id}',this.value)">${['Neu','In Bearbeitung','Gelöst'].map(s=>`<option ${s==t.status?'selected':''}>${s}</option>`).join('')}</select>`:''}
+      </div>
+    </div>
+
+    <div id="c-list" class="h-80 overflow-y-auto space-y-2.5 p-3 my-3 rounded-xl bg-slate-100 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800"></div>
+    <div id="c-prev"></div>
+    <div class="flex gap-2">
+      <label class="btn2 shrink-0" title="Screenshot anhängen"><i data-lucide="image" class="w-4 h-4"></i><input type="file" accept="image/*" hidden onchange="pick(this,'c-prev')"></label>
+      <input id="s-c-msg" class="inp" placeholder="Nachricht schreiben…" onkeydown="if(event.key=='Enter')sendMsg('${id}',${asAdmin})">
+      <button class="btn shrink-0" onclick="sendMsg('${id}',${asAdmin})"><i data-lucide="send" class="w-4 h-4"></i></button>
+    </div>`);
+
+  unsubMsg&&unsubMsg();
+  unsubMsg=DB.msgs(id,ms=>{
+    const l=$('#c-list');if(!l)return;
+    const mySide=asAdmin?'scout':'student';
+    l.innerHTML=ms.map(m=>`<div class="flex ${m.from==mySide?'justify-end':'justify-start'}">
+      <div class="max-w-[82%] px-3.5 py-2.5 rounded-2xl text-sm ${m.from==mySide?'bg-blue-600 text-white':'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
+        <div class="text-[10px] opacity-75 mb-0.5 font-medium">${esc(m.senderName||(m.from=='scout'?'Medienscout':'Schüler'))} · ${fmt(m.ts)}</div>
+        ${m.text?`<div>${esc(m.text).replace(/\n/g,'<br>')}</div>`:''}
+        ${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-44 cursor-zoom-in border border-white/20">`:''}
+      </div>
+    </div>`).join('');
+    l.scrollTop=l.scrollHeight;
+  });
+};
+
+window.updStatus=async(id,st)=>{await DB.upd('tickets',id,{status:st,updatedAt:Date.now()});$('#c-st').innerHTML=badge(st)};
+window.sendMsg=async(id,asAdmin)=>{
+  const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
+  const now=Date.now();
+  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?' (Scout)':''),text,img,ts:now});
+  await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
+  $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML='';
+};
+
+window.sendApp=async()=>{
+  const n=val('a-name'),c=val('a-class'),m=val('a-mot');
+  if(!n||!c||!m)return toast('Bitte alle Felder ausfüllen.');
+  await DB.add('applications',{uid:S.user.uid,email:S.user.email,name:n,klass:c,motivation:m,status:'Offen',createdAt:Date.now()});
+  toast('Deine Bewerbung wurde gespeichert!');
+};
+
+// ---------- Admin-Bereich ----------
+const TABS=[
+  ['settings','sliders-horizontal','Einstellungen & Design'],
+  ['content','book-open','Artikel & Videos'],
+  ['tickets','inbox','Support-Tickets'],
+  ['apps','user-check','Bewerbungen'],
+  ['team','users','Accounts & Rollen']
+];
+
 function adminView(){
-  const nNew=S.tickets.filter(t=>t.status=='Neu').length;
-  return nav()+`<main class="max-w-6xl mx-auto px-4 py-6"><h1 class="text-2xl font-bold mb-4 flex gap-2"><i data-lucide="terminal-square" class="text-violet-500"></i>Admin-Terminal</h1>
-<div class="flex flex-wrap gap-2 mb-6">${TABS.map(([k,i,l])=>`<button class="tab ${S.tab==k?'on':''}" onclick="S.tab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline"></i> ${l}${k=='tickets'&&nNew?` (${nNew})`:''}</button>`).join('')}</div>${tabs[S.tab]()}</main>`}
-const toggle=(k,l,d)=>`<div class="glass p-5 flex items-center gap-4"><div class="flex-1"><div class="font-semibold">${l}</div><div class="text-sm opacity-70">${d}</div></div><button onclick="setSet('${k}',${!S.settings[k]})" class="w-14 h-8 rounded-full p-1 transition ${S.settings[k]?'bg-emerald-500':'bg-slate-500/50'}"><span class="block w-6 h-6 rounded-full bg-white transition ${S.settings[k]?'translate-x-6':''}"></span></button><b class="w-10 text-sm">${S.settings[k]?'AN':'AUS'}</b></div>`;
-window.setSet=(k,v)=>DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});
-const ed=S.edit;
-const tabs={
-  settings:()=>`<div class="space-y-4 max-w-2xl">${toggle('tickets','Support-Ticket-System','Schüler können Tickets erstellen')}${toggle('apps','Bewerbungsphase','Bewerbungsformular im öffentlichen Dashboard')}</div>`,
-  content:()=>{const v=S.edit?.t=='v'?S.videos.find(x=>x.id==S.edit.id):null,a=S.edit?.t=='a'?S.articles.find(x=>x.id==S.edit.id):null;
-    return`<div class="grid lg:grid-cols-2 gap-6"><div class="space-y-4"><div class="glass p-5 space-y-3"><h3 class="font-semibold">${v?'Video bearbeiten':'Video hinzufügen'}</h3><input id="v-url" class="inp" placeholder="YouTube-Link oder Video-ID" value="${v?esc(v.vid):''}"><input id="v-title" class="inp" placeholder="Titel" value="${v?esc(v.title):''}"><textarea id="v-desc" rows="3" class="inp" placeholder="Beschreibung">${v?esc(v.desc):''}</textarea><button class="btn" onclick="saveVideo('${v?.id||''}')">Speichern</button></div>
-    ${S.videos.map(x=>`<div class="glass p-3 flex gap-2 items-center"><span class="flex-1 text-sm truncate">${esc(x.title)}</span><button class="btn2" onclick="S.edit={t:'v',id:'${x.id}'};render()">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="delItem('videos','${x.id}')">Löschen</button></div>`).join('')}</div>
-    <div class="space-y-4"><div class="glass p-5 space-y-3"><h3 class="font-semibold">${a?'Artikel bearbeiten':'Artikel / Anleitung schreiben'}</h3><input id="a-title" class="inp" placeholder="Titel" value="${a?esc(a.title):''}"><select id="a-cat" class="inp">${CATS.map(c=>`<option ${a&&a.cat==c?'selected':''}>${c}</option>`).join('')}</select><textarea id="a-body" rows="9" class="inp" placeholder="Inhalt. Leerzeile = neuer Absatz, '## Überschrift', '- Listenpunkt'">${a?esc(a.body):''}</textarea><button class="btn" onclick="saveArt('${a?.id||''}')">Veröffentlichen</button></div>
-    ${S.articles.map(x=>`<div class="glass p-3 flex gap-2 items-center"><span class="flex-1 text-sm truncate">${esc(x.title)}</span><button class="btn2" onclick="S.edit={t:'a',id:'${x.id}'};render()">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="delItem('articles','${x.id}')">Löschen</button></div>`).join('')}</div></div>`},
-  tickets:()=>`<div class="space-y-3">${S.tickets.map(t=>`<button onclick="openChat('${t.id}',true)" class="glass w-full p-4 flex items-center gap-3 text-left"><b>${t.id}</b>${badge(t.status)}<span class="text-sm opacity-70">${esc(t.category)}</span>${t.unread?'<span class="w-2 h-2 rounded-full bg-rose-500"></span>':''}<span class="ml-auto text-xs opacity-60">${fmt(t.updatedAt)}</span></button>`).join('')||'<p class="opacity-60">Keine Tickets.</p>'}</div>`,
-  apps:()=>`<div class="space-y-3">${S.apps.map(a=>`<div class="glass p-4"><div class="flex items-center gap-2 flex-wrap"><b>${esc(a.name)}</b><span class="text-sm opacity-70">Klasse ${esc(a.klass)}</span><span class="text-xs px-2 py-0.5 rounded-full bg-violet-500/20">${a.status}</span><span class="ml-auto text-xs opacity-60">${fmt(a.createdAt)}</span></div><p class="text-sm mt-2 opacity-80">${esc(a.motivation)}</p><div class="flex gap-2 mt-3"><button class="btn2 !text-emerald-500" onclick="DB.upd('applications','${a.id}',{status:'Angenommen'})">Annehmen</button><button class="btn2 !text-amber-500" onclick="DB.upd('applications','${a.id}',{status:'Abgelehnt'})">Ablehnen</button><button class="btn2 !text-rose-500" onclick="delItem('applications','${a.id}')">Löschen</button></div></div>`).join('')||'<p class="opacity-60">Keine Bewerbungen.</p>'}</div>`,
-  team:()=>`<div class="grid md:grid-cols-2 gap-6"><div class="glass p-5 space-y-3"><h3 class="font-semibold">Neuen Zugang anlegen</h3><input id="u-mail" type="email" class="inp" placeholder="E-Mail"><input id="u-name" class="inp" placeholder="Name"><input id="u-pw" type="text" class="inp" placeholder="Passwort (min. 6 Zeichen)"><select id="u-role" class="inp"><option>Medienscout</option><option>Admin</option></select><button class="btn" onclick="addUser()">Anlegen</button></div>
-  <div class="space-y-3">${S.users.map(u=>`<div class="glass p-3 flex items-center gap-2"><div class="flex-1"><b class="text-sm">${esc(u.name)}</b> <span class="text-xs opacity-70">${esc(u.role)}</span><div class="text-xs opacity-60">${esc(u.email)}</div></div>${u.id!=S.user.uid?`<button class="btn2 !text-rose-500" onclick="delItem('users','${u.id}')">Entfernen</button>`:''}</div>`).join('')}</div></div>`
-};
-window.delItem=async(c,id)=>{if(confirm('Wirklich löschen?'))await DB.del(c,id)};
-window.saveVideo=async id=>{const vid=ytId(val('v-url'));if(!vid)return toast('Ungültiger YouTube-Link.');const d={vid,title:val('v-title'),desc:val('v-desc')};if(!d.title)return toast('Titel fehlt.');
-  id?await DB.upd('videos',id,d):await DB.add('videos',{...d,createdAt:Date.now()});S.edit=null;render()};
-window.saveArt=async id=>{const d={title:val('a-title'),cat:val('a-cat'),body:val('a-body')};if(!d.title||!d.body)return toast('Titel und Inhalt nötig.');
-  id?await DB.upd('articles',id,d):await DB.add('articles',{...d,createdAt:Date.now()});S.edit=null;render()};
-window.addUser=async()=>{const email=val('u-mail'),name=val('u-name'),pw=val('u-pw'),role=val('u-role');if(!email||!name||pw.length<6)return toast('Bitte alles korrekt ausfüllen.');
-  try{const sec=initializeApp(firebaseConfig,'sec'+Date.now()),sa=getAuth(sec);const c=await createUserWithEmailAndPassword(sa,email,pw);
-    await DB.set('users',c.user.uid,{email,name,role});await signOut(sa);toast('Zugang angelegt.');['u-mail','u-name','u-pw'].forEach(i=>$('#'+i).value='')}catch(e){toast('Fehler: '+e.code)}};
+  const nNew=S.tickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
+  const nApps=S.apps.filter(a=>a.status=='Offen').length;
+  return `<div class="space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h1 class="text-2xl font-bold flex items-center gap-2"><i data-lucide="shield" class="text-blue-600"></i>Verwaltung & Medienscout-Team</h1>
+      <span class="text-xs px-3 py-1 rounded-full bg-blue-500/15 text-blue-500 font-semibold">Rolle: ${esc(S.user.role)}</span>
+    </div>
+    <div class="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+      ${TABS.map(([k,i,l])=>`<button class="tab ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}</button>`).join('')}
+    </div>
+    ${adminTabs[S.adminTab]()}
+  </div>`;
+}
 
-// ---------- Ersteinrichtung + Demo-Daten ----------
+const toggleRow=(k,l,d)=>`<div class="glass p-4 flex items-center justify-between gap-4">
+  <div><div class="font-semibold text-sm">${l}</div><div class="text-xs opacity-70">${d}</div></div>
+  <button onclick="setSet('${k}',${!S.settings[k]})" class="w-12 h-7 rounded-full p-1 transition cursor-pointer ${S.settings[k]?'bg-emerald-500':'bg-slate-400 dark:bg-slate-700'}">
+    <span class="block w-5 h-5 rounded-full bg-white transition ${S.settings[k]?'translate-x-5':''}"></span>
+  </button>
+</div>`;
+
+window.setSet=(k,v)=>DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});
+window.saveBrand=async()=>{
+  await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
+  toast('Texte gespeichert.');
+};
+window.uploadAsset=async(inp,key,max)=>{
+  if(!inp.files[0])return;
+  const data=await compress(inp.files[0],max,0.8);
+  await setSet(key,data);
+  toast('Bild aktualisiert.');
+};
+
+const adminTabs={
+  settings:()=>`<div class="grid md:grid-cols-2 gap-6">
+    <div class="space-y-3">
+      <h3 class="font-bold text-base">Funktionen aktivieren / deaktivieren</h3>
+      ${toggleRow('tickets','Support-Ticket-System','Schüler können mit ihrem Account Tickets eröffnen und chatten')}
+      ${toggleRow('apps','Bewerbungs-Modul','Schüler können sich über das Portal als Medienscout bewerben')}
+      ${toggleRow('allowReg','Selbst-Registrierung erlauben','Wenn AUS, können sich nur bereits angelegte Schul-Accounts einloggen')}
+    </div>
+
+    <div class="space-y-4">
+      <div class="glass p-5 space-y-3">
+        <h3 class="font-bold text-base">Schulname & Überschrift</h3>
+        <div><label class="text-xs opacity-70 block mb-1">Portal-Titel (oben links & Startseite)</label><input id="set-title" class="inp" value="${esc(S.settings.schoolName)}"></div>
+        <div><label class="text-xs opacity-70 block mb-1">Untertitel</label><input id="set-sub" class="inp" value="${esc(S.settings.subTitle)}"></div>
+        <button class="btn" onclick="saveBrand()">Speichern</button>
+      </div>
+
+      <div class="glass p-5 space-y-4">
+        <h3 class="font-bold text-base">Logo & Hintergrundbild</h3>
+        <div class="flex items-center gap-3">
+          ${S.settings.logo?`<img src="${S.settings.logo}" class="w-12 h-12 rounded-xl object-contain border border-slate-500/30">`:`<div class="w-12 h-12 rounded-xl bg-slate-500/10 flex items-center justify-center text-xs opacity-50">Kein Logo</div>`}
+          <label class="btn2"><i data-lucide="upload" class="w-4 h-4"></i>Logo hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'logo',300)"></label>
+          ${S.settings.logo?`<button class="btn2 !text-rose-500" onclick="setSet('logo','')">Entfernen</button>`:''}
+        </div>
+        <div class="flex items-center gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+          ${S.settings.bg?`<img src="${S.settings.bg}" class="w-16 h-10 rounded-lg object-cover border border-slate-500/30">`:`<div class="w-16 h-10 rounded-lg bg-slate-500/10 flex items-center justify-center text-xs opacity-50">Standard</div>`}
+          <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Hintergrundbild<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'bg',1400)"></label>
+          ${S.settings.bg?`<button class="btn2 !text-rose-500" onclick="setSet('bg','')">Entfernen</button>`:''}
+        </div>
+      </div>
+    </div>
+  </div>`,
+
+  content:()=>{
+    const v=S.edit?.t=='v'?S.videos.find(x=>x.id==S.edit.id):null;
+    const a=S.edit?.t=='a'?S.articles.find(x=>x.id==S.edit.id):null;
+    return `<div class="grid lg:grid-cols-2 gap-6">
+      <!-- Artikel & Anleitungen -->
+      <div class="space-y-4">
+        <div class="glass p-5 space-y-3">
+          <h3 class="font-bold">${a?'Artikel bearbeiten':'Neuen Artikel / Anleitung schreiben'}</h3>
+          <input id="a-title" class="inp" placeholder="Titel der Anleitung" value="${a?esc(a.title):''}">
+          <div class="grid grid-cols-2 gap-2">
+            <select id="a-cat" class="inp">${CATS.map(c=>`<option ${a&&a.cat==c?'selected':''}>${c}</option>`).join('')}</select>
+            <select id="a-pub" class="inp">
+              <option value="1" ${!a||a.published!==false?'selected':''}>Veröffentlicht (Sichtbar)</option>
+              <option value="0" ${a&&a.published===false?'selected':''}>Entwurf (Versteckt)</option>
+            </select>
+          </div>
+          <textarea id="a-body" rows="8" class="inp" placeholder="Text schreiben…&#10;## Zwischenüberschrift&#10;- Aufzählungspunkt">${a?esc(a.body):''}</textarea>
+          <div class="flex gap-2">
+            <button class="btn" onclick="saveArt('${a?.id||''}')"><i data-lucide="check" class="w-4 h-4"></i>${a?'Aktualisieren':'Veröffentlichen'}</button>
+            ${a?`<button class="btn2" onclick="S.edit=null;render()">Abbrechen</button>`:''}
+          </div>
+        </div>
+        <div class="space-y-2">
+          ${S.articles.map(x=>`<div class="glass p-3 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full ${x.published===false?'bg-amber-500':'bg-emerald-500'}" title="${x.published===false?'Entwurf':'Veröffentlicht'}"></span>
+            <div class="flex-1 min-w-0"><div class="text-sm font-medium truncate">${esc(x.title)}</div><div class="text-[11px] opacity-60">${esc(x.cat)} · ${x.published===false?'Entwurf':'Öffentlich'}</div></div>
+            <button class="btn2" onclick="DB.upd('articles','${x.id}',{published:${x.published===false}})">${x.published===false?'Freischalten':'Verbergen'}</button>
+            <button class="btn2" onclick="S.edit={t:'a',id:'${x.id}'};render()">Bearbeiten</button>
+            <button class="btn2 !text-rose-500" onclick="delItem('articles','${x.id}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+          </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Videos -->
+      <div class="space-y-4">
+        <div class="glass p-5 space-y-3">
+          <h3 class="font-bold">${v?'Video bearbeiten':'YouTube-Video einbinden'}</h3>
+          <input id="v-url" class="inp" placeholder="YouTube-Link oder ID" value="${v?esc(v.vid):''}">
+          <input id="v-title" class="inp" placeholder="Titel des Videos" value="${v?esc(v.title):''}">
+          <select id="v-cat" class="inp">${CATS.map(c=>`<option ${v&&v.cat==c?'selected':''}>${c}</option>`).join('')}</select>
+          <textarea id="v-desc" rows="3" class="inp" placeholder="Kurze Beschreibung">${v?esc(v.desc):''}</textarea>
+          <div class="flex gap-2">
+            <button class="btn" onclick="saveVideo('${v?.id||''}')"><i data-lucide="video" class="w-4 h-4"></i>Speichern</button>
+            ${v?`<button class="btn2" onclick="S.edit=null;render()">Abbrechen</button>`:''}
+          </div>
+        </div>
+        <div class="space-y-2">
+          ${S.videos.map(x=>`<div class="glass p-3 flex items-center gap-2">
+            <div class="flex-1 min-w-0"><div class="text-sm font-medium truncate">${esc(x.title)}</div><div class="text-[11px] opacity-60">${esc(x.cat||'Allgemein')}</div></div>
+            <button class="btn2" onclick="S.edit={t:'v',id:'${x.id}'};render()">Bearbeiten</button>
+            <button class="btn2 !text-rose-500" onclick="delItem('videos','${x.id}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  },
+
+  tickets:()=>`<div class="space-y-2.5">
+    ${S.tickets.map(t=>`<div class="glass p-4 flex items-center justify-between gap-3">
+      <button onclick="openChat('${t.id}',true)" class="flex-1 text-left flex items-center gap-3">
+        ${t.unreadAdmin?`<span class="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" title="Ungelesen"></span>`:''}
+        <div>
+          <div class="font-bold text-sm flex items-center gap-2">${esc(t.subject||t.category)} ${badge(t.status)}</div>
+          <div class="text-xs opacity-70 mt-0.5">Von: <b>${esc(t.userName||'Schüler')}</b> (${esc(t.userEmail||'-')}) · ${esc(t.category)} · ${fmt(t.updatedAt||t.createdAt)}</div>
+        </div>
+      </button>
+      <button class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="message-square" class="w-4 h-4"></i>Chat öffnen</button>
+      <button class="btn2 !text-rose-500" onclick="delItem('tickets','${t.id}')" title="Ticket löschen"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+    </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine Tickets vorhanden.</div>'}
+  </div>`,
+
+  apps:()=>`<div class="space-y-3">
+    ${S.apps.map(a=>`<div class="glass p-5 space-y-2">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <b class="text-base">${esc(a.name)}</b> <span class="text-xs opacity-70">· Klasse ${esc(a.klass)} (${esc(a.email||'-')})</span>
+        </div>
+        <div class="flex items-center gap-2">${badge(a.status)}<span class="text-xs opacity-60">${fmt(a.createdAt)}</span></div>
+      </div>
+      <p class="text-sm opacity-85 bg-slate-500/10 p-3 rounded-xl">${esc(a.motivation)}</p>
+      <div class="flex flex-wrap gap-2 pt-1">
+        <button class="btn2 !text-emerald-500" onclick="acceptApplicant('${a.id}','${a.uid||''}')"><i data-lucide="check" class="w-4 h-4"></i>Annehmen (& zum Medienscout machen)</button>
+        <button class="btn2 !text-amber-500" onclick="DB.upd('applications','${a.id}',{status:'Abgelehnt'})">Ablehnen</button>
+        <button class="btn2 !text-rose-500 ml-auto" onclick="delItem('applications','${a.id}')">Löschen</button>
+      </div>
+    </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine Bewerbungen vorhanden.</div>'}
+  </div>`,
+
+  team:()=>`<div class="grid md:grid-cols-5 gap-6">
+    <div class="glass p-5 space-y-3 md:col-span-2 h-fit">
+      <h3 class="font-bold">Neuen Account direkt anlegen</h3>
+      <p class="text-xs opacity-70">Ihr könnt hier neue Accounts erstellen oder rechts bestehende Schul-Accounts per Klick zum <b>Admin</b> oder <b>Medienscout</b> ernennen.</p>
+      <input id="u-name" class="inp" placeholder="Vor- und Nachname">
+      <input id="u-mail" type="email" class="inp" placeholder="Schul-E-Mail-Adresse">
+      <input id="u-pw" type="text" class="inp" placeholder="Start-Passwort (min. 6 Zeichen)">
+      <select id="u-role" class="inp"><option>Schüler</option><option>Medienscout</option><option>Admin</option></select>
+      <button class="btn w-full" onclick="addUser()"><i data-lucide="user-plus" class="w-4 h-4"></i>Account anlegen</button>
+    </div>
+    <div class="space-y-2 md:col-span-3">
+      <h3 class="font-bold mb-2">Registrierte Accounts (${S.users.length})</h3>
+      ${S.users.map(u=>`<div class="glass p-3.5 flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <div class="font-semibold text-sm">${esc(u.name)}</div>
+          <div class="text-xs opacity-60">${esc(u.email)}</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <select class="inp !w-auto !py-1.5 !px-2.5 text-xs" onchange="DB.upd('users','${u.id}',{role:this.value});toast('Rolle geändert')">
+            ${['Schüler','Medienscout','Admin'].map(r=>`<option ${u.role==r?'selected':''}>${r}</option>`).join('')}
+          </select>
+          ${u.id!=S.user.uid?`<button class="btn2 !text-rose-500" onclick="delItem('users','${u.id}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`:''}
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>`
+};
+
+window.acceptApplicant=async(appId,uid)=>{
+  await DB.upd('applications',appId,{status:'Angenommen'});
+  if(uid)await DB.upd('users',uid,{role:'Medienscout'}).catch(()=>{});
+  toast('Bewerbung angenommen & Account als Medienscout freigeschaltet!');
+};
+
+window.delItem=async(c,id)=>{if(confirm('Diesen Eintrag wirklich löschen?'))await DB.del(c,id)};
+window.saveVideo=async id=>{
+  const vid=ytId(val('v-url'));if(!vid)return toast('Bitte gültigen YouTube-Link eingeben.');
+  const d={vid,title:val('v-title'),cat:val('v-cat'),desc:val('v-desc'),published:true};
+  if(!d.title)return toast('Titel fehlt.');
+  id?await DB.upd('videos',id,d):await DB.add('videos',{...d,createdAt:Date.now()});
+  S.edit=null;toast('Video gespeichert.');render();
+};
+window.saveArt=async id=>{
+  const d={title:val('a-title'),cat:val('a-cat'),body:val('a-body'),published:val('a-pub')==='1'};
+  if(!d.title||!d.body)return toast('Bitte Titel und Inhalt ausfüllen.');
+  id?await DB.upd('articles',id,d):await DB.add('articles',{...d,createdAt:Date.now()});
+  S.edit=null;toast('Artikel gespeichert.');render();
+};
+window.addUser=async()=>{
+  const email=val('u-mail'),name=val('u-name'),pw=val('u-pw'),role=val('u-role');
+  if(!email||!name||pw.length<6)return toast('Bitte alle Felder ausfüllen (Passwort min. 6 Zeichen).');
+  try{
+    const sec=initializeApp(firebaseConfig,'sec'+Date.now()),sa=getAuth(sec);
+    const c=await createUserWithEmailAndPassword(sa,email,pw);
+    await DB.set('users',c.user.uid,{email,name,role,createdAt:Date.now()});
+    await signOut(sa);toast('Account wurde angelegt.');
+    ['u-mail','u-name','u-pw'].forEach(i=>$('#'+i).value='');
+  }catch(e){toast('Fehler: '+e.code)}
+};
+
+// ---------- Ersteinrichtung ----------
 window.setup=async()=>{
-  try{const email=val('l-mail'),pw=val('l-pw');const c=await createUserWithEmailAndPassword(auth,email,pw);
-    await DB.set('users',c.user.uid,{email,name:'Admin',role:'Admin'});
-    await DB.set('settings','main',{tickets:true,apps:true,setupDone:true});
+  try{
+    const email=val('l-mail'),pw=val('l-pw');
+    const c=await createUserWithEmailAndPassword(auth,email,pw);
+    await DB.set('users',c.user.uid,{email,name:'Haupt-Admin',role:'Admin',createdAt:Date.now()});
+    await DB.set('settings','main',{...S.settings,setupDone:true});
     const now=Date.now();
-    const vids=[['Y3SFXvtfZQQ','Sicher im Netz – Basics','Grundlagen zu Privatsphäre und sicherem Verhalten im Internet.'],['hJy5vmcrbW4','Cybermobbing erkennen','Woran du Cybermobbing erkennst und wie du reagieren kannst.']];
-    for(const[i,[vid,title,desc]]of vids.entries())await DB.add('videos',{vid,title,desc,createdAt:now+i});
-    const arts=[['Cybermobbing','Was tun bei Cybermobbing?',"## Ruhe bewahren\nAntworte nicht aus Wut und lösche nichts.\n\n- Screenshots als Beweis sichern\n- Täter blockieren und melden\n- Vertrauenspersonen oder Medienscouts ansprechen\n\nDu bist nicht schuld. Hilfe findest du auch anonym über unser Ticket-System."],
-      ['Passwörter & Sicherheit','2-Faktor-Authentifizierung (2FA) einrichten',"## Warum 2FA?\nEin Passwort allein reicht oft nicht. 2FA fügt einen zweiten Schutz hinzu.\n\n- Öffne die Sicherheitseinstellungen deines Kontos\n- Wähle „Zwei-Faktor-Authentifizierung“\n- Nutze eine Authenticator-App statt SMS\n- Speichere die Backup-Codes sicher ab"],
-      ['Datenschutz','Sichere Passwörter erstellen',"## Die Regeln\n- Mindestens 12 Zeichen\n- Pro Dienst ein eigenes Passwort\n- Passwortsätze statt einzelner Wörter\n\nEin Passwort-Manager hilft dir, den Überblick zu behalten."]];
-    for(const[i,[cat,title,body]]of arts.entries())await DB.add('articles',{cat,title,body,createdAt:now+i});
-    await DB.set('tickets','MS-1234',{category:'Cybermobbing',status:'In Bearbeitung',createdAt:now,updatedAt:now,unread:false});
-    await DB.addMsg('MS-1234',{from:'student',text:'In unserer Klassengruppe werden fiese Nachrichten über mich geschrieben.',img:null,ts:now});
-    await DB.addMsg('MS-1234',{from:'scout',text:'Danke, dass du dich meldest. Kannst du Screenshots hochladen?',img:null,ts:now+1000});
-    await DB.add('applications',{name:'Mia Beispiel',klass:'8b',motivation:'Ich interessiere mich für Medienkompetenz und möchte anderen helfen.',status:'Offen',createdAt:now});
-    toast('Admin angelegt, Demo-Daten geladen.');
-  }catch(e){toast('Fehler: '+e.code)}};
+    await DB.add('videos',{vid:'Y3SFXvtfZQQ',title:'Sicher im Netz – Grundlagen',cat:'Passwörter & Sicherheit',desc:'Wichtige Tipps für deine Privatsphäre und sichere Accounts.',published:true,createdAt:now});
+    await DB.add('articles',{cat:'Schul-IT & Accounts',title:'Wie funktioniert dieses Hilfe-Portal?',body:"## Willkommen auf unserem Schulportal\nHier findest du Anleitungen und schnelle Hilfe bei Fragen rund um digitale Medien, Social Media und deine Schul-Accounts.\n\n- Lies dir unsere Anleitungen und Videos direkt ohne Anmeldung durch\n- Melde dich mit deiner Schul-E-Mail an, um ein persönliches Support-Ticket zu starten\n- Im Ticket kannst du direkt mit den Medienscouts chatten und Screenshots schicken",published:true,createdAt:now});
+    closeModal();toast('Admin-Account & Startdaten erfolgreich eingerichtet!');
+  }catch(e){toast('Fehler: '+e.code)}
+};
 
 Object.assign(window,{S,DB,val,render});
 render();
