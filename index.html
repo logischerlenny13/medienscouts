@@ -753,7 +753,7 @@ window.openChat=async(id,asAdmin)=>{
       }
       return `<div class="flex ${m.from==mySide?'justify-end':'justify-start'}">
         <div class="max-w-[80%] sm:max-w-[70%] px-4 py-3 rounded-2xl text-sm shadow-xs ${m.from==mySide?'bg-blue-600 text-white':'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
-          <div class="text-[11px] opacity-75 mb-1 font-medium">${esc(m.senderName||(m.from=='scout'?'Medienscout':'Schüler'))} · ${fmt(m.ts)}</div>
+          <div class="text-[11px] opacity-75 mb-1 font-medium">${esc(m.senderName||(m.from=='scout'?'Medienscout':'Schüler'))} <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${m.senderRole==='Admin'?'bg-rose-500/15 text-rose-500':m.senderRole==='Medienscout'?'bg-amber-500/15 text-amber-600':'bg-emerald-500/15 text-emerald-600'}">${esc(m.senderRole|| (m.from==='scout'?'Medienscout':'User'))}</span> · ${fmt(m.ts)}</div>
           ${m.text?`<div class="leading-relaxed">${esc(m.text).replace(/\n/g,'<br>')}</div>`:''}
           ${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 cursor-zoom-in border border-white/20">`:''}
         </div>
@@ -794,7 +794,7 @@ window.sendMsg=async(id,asAdmin)=>{
   if(asAdmin&&!can('support'))return toast('Keine Berechtigung für Support-Anfragen.');
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
   if(asAdmin&&text.trim().toLowerCase().startsWith('/passwort')){if(!can('passwordSupport'))return toast('Keine Berechtigung für Passwort-Anfragen.');const t=await DB.get('tickets',id);if(!t?.userEmail)return toast('Keine E-Mail-Adresse hinterlegt.');try{await sendPasswordResetEmail(auth,t.userEmail);await DB.addMsg(id,{from:'scout',senderName:S.user.name+' (Medienscout)',text:'Ich habe eine sichere E-Mail zum Zurücksetzen deines Passworts angefordert. Bitte prüfe dein Schulpostfach und folge dem Link. Teile dein Passwort niemals im Chat.',internal:false,ts:now});await logActivity('Passwort-Reset angefordert',t.userEmail);$('#s-c-msg').value='';toast('Reset-Link wurde per E-Mail angefordert.');return}catch(e){return toast('Fehler: '+e.code)}}
-  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(isAdmin()?' (Admin)':' (Medienscout)'):''),text,img,internal:isInternal,ts:now});
+  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(isAdmin()?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(isAdmin()?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now});
   if(!isInternal){
     await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
   }
@@ -1221,18 +1221,18 @@ window.acceptApplicant=async(appId,uid)=>{
   if(uid)await DB.upd('users',uid,{role:'Medienscout'}).catch(()=>{});
   toast('Bewerbung angenommen & als Medienscout freigeschaltet!');
 };
-window.delItem=async(c,id)=>{if(c==='users'&&!isAdmin())return toast('Nur Admins dürfen Konten löschen.');if(c==='tickets'&&!can('support'))return toast('Keine Berechtigung.');if(confirm('Diesen Eintrag wirklich löschen?')){await DB.del(c,id);await logActivity('Eintrag gelöscht',c+'/'+id)}};
+window.delItem=async(c,id)=>{if(c==='users'&&!isAdmin())return toast('Nur Admins dürfen Konten löschen.');if(['articles','videos'].includes(c)&&!can('deleteContent'))return toast('Keine Berechtigung zum Löschen von Inhalten.');if(c==='tickets'&&!can('support'))return toast('Keine Berechtigung.');if(confirm('Diesen Eintrag wirklich löschen?')){await DB.del(c,id);await logActivity('Eintrag gelöscht',c+'/'+id)}};
 window.saveVideo=async id=>{
   if(!can('content'))return toast('Keine Berechtigung.');const vid=ytId(val('v-url'));if(!vid)return toast('Ungültiger YouTube-Link.');
   const d={vid,title:val('v-title'),cat:val('v-cat'),desc:val('v-desc'),pinned:$('#v-pin')?.checked||false,published:true};
   if(!d.title)return toast('Titel fehlt.');
-  id?await DB.upd('videos',id,d):await DB.add('videos',{...d,createdAt:Date.now()});
+  id?await DB.upd('videos',id,d):await DB.add('videos',{...d,createdAt:Date.now()});await logActivity('Video gespeichert',d.title);
   S.edit=null;toast('Video gespeichert.');render();
 };
 window.saveArt=async id=>{
   if(!can('content'))return toast('Keine Berechtigung.');const d={title:val('a-title'),cat:val('a-cat'),body:val('a-body'),pinned:$('#a-pin')?.checked||false,published:val('a-pub')==='1'};
   if(!d.title||!d.body)return toast('Bitte Titel und Inhalt ausfüllen.');
-  id?await DB.upd('articles',id,d):await DB.add('articles',{...d,up:0,down:0,createdAt:Date.now()});
+  id?await DB.upd('articles',id,d):await DB.add('articles',{...d,up:0,down:0,createdAt:Date.now()});await logActivity('Artikel gespeichert',d.title);
   S.edit=null;toast('Artikel gespeichert.');render();
 };
 window.addUser=async()=>{if(!isAdmin()&&!can('accounts'))return toast('Keine Berechtigung.');
@@ -1241,7 +1241,7 @@ window.addUser=async()=>{if(!isAdmin()&&!can('accounts'))return toast('Keine Ber
   try{
     const sec=initializeApp(firebaseConfig,'sec'+Date.now()),sa=getAuth(sec);
     const c=await createUserWithEmailAndPassword(sa,email,pw);
-    await DB.set('users',c.user.uid,{email,name,klass,role,createdAt:Date.now()});
+    await DB.set('users',c.user.uid,{email,name,klass,role:role==='Admin'&&!isAdmin()?'Schüler':role,createdAt:Date.now()});await logActivity('Benutzerkonto angelegt',email);
     await signOut(sa);toast('Account angelegt.');
     ['u-mail','u-name','u-pw'].forEach(i=>$('#'+i).value='');
   }catch(e){toast('Fehler: '+e.code)}
