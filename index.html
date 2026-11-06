@@ -828,7 +828,9 @@ window.saveSlashCommand=async id=>{
   const list=[...(S.settings.slashCommands||defaultSlashCommands())];if(list.some(x=>x.name===name&&x.id!==id))return toast('Diesen Befehl gibt es bereits.');
   const roles=val('sc-roles')==='admin'?['Admin']:val('sc-roles')==='scout'?['Medienscout']:['Admin','Medienscout'];
   const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:val('sc-image'),active:$('#sc-active').checked,requiresPassword:$('#sc-password').checked,roles};
-  const next=id?list.map(x=>x.id===id?c:x):[...list,c];await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:next});closeModal();toast('Slash-Befehl gespeichert.');render();
+  const exists=list.some(x=>x.id===id);
+  const next=exists?list.map(x=>x.id===id?c:x):[...list,c];
+  await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:next});closeModal();toast('Slash-Befehl gespeichert.');render();
 };
 window.deleteSlashCommand=async id=>{if(!confirm('Diesen Slash-Befehl wirklich löschen?'))return;await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:(S.settings.slashCommands||defaultSlashCommands()).filter(x=>x.id!==id)});toast('Befehl gelöscht.');render();};
 window.runSlashCommand=async(ticketId,input)=>{
