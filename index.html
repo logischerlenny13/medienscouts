@@ -66,7 +66,8 @@ const icons=()=>lucide.createIcons();
 const val=id=>$('#'+id)?.value.trim()||'';
 const fmt=ts=>ts?new Date(ts).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'}):'-';
 const ytId=u=>{const m=String(u||'').match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/);return m?m[1]:/^[\w-]{11}$/.test(u)?u:null};
-const CATS=['Cybermobbing','Datenschutz','Passwörter & Sicherheit','Social Media','Schul-IT & Accounts','Sonstiges'];
+const CATS=['Cybermobbing','Datenschutz','Passwörter & Sicherheit','Passwort zurücksetzen','Social Media','Schul-IT & Accounts','Sonstiges'];
+const passwordPlatforms=()=>S.settings.passwordPlatforms||['Minecraft','Roblox','Instagram','TikTok','Sonstige'];
 const CLASSES=['Alle','Klasse 5','Klasse 6','Klasse 7','Klasse 8','Klasse 9','Klasse 10','EF / Oberstufe'];
 
 const compress=(f,max=1000,q=0.75)=>new Promise((res,rej)=>{
@@ -482,15 +483,22 @@ function studentTicketsView(){
         <h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-blue-500"></i>Neues Ticket starten</h2>
         <div>
           <label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label>
-          <select id="t-cat" class="inp">${CATS.map(c=>`<option>${c}</option>`).join('')}</select>
+          <select id="t-cat" class="inp" onchange="togglePasswordPlatform()">${CATS.filter(c=>c!=='Passwort zurücksetzen'||S.settings.passwordSupport).map(c=>`<option>${c}</option>`).join('')}</select>
         </div>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Betreff (kurz)</label>
-          <input id="t-subj" class="inp" placeholder="z.B. Hilfe bei WhatsApp / Account">
+        <div id="t-platform-wrap" class="hidden">
+          <label class="text-xs opacity-70 block mb-1">Welche Plattform?</label>
+          <select id="t-platform" class="inp">${passwordPlatforms().map(p=>`<option>${esc(p)}</option>`).join('')}</select>
+          <p class="text-xs opacity-60 mt-1">Du musst keinen Betreff und keine zusätzliche Nachricht schreiben. Das Team kümmert sich um die Zurücksetzung.</p>
         </div>
-        <div>
-          <label class="text-xs opacity-70 block mb-1">Deine Nachricht</label>
-          <textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz dein Anliegen…"></textarea>
+        <div id="t-standard-fields">
+          <div>
+            <label class="text-xs opacity-70 block mb-1">Betreff (kurz)</label>
+            <input id="t-subj" class="inp" placeholder="z.B. Hilfe bei WhatsApp / Account">
+          </div>
+          <div>
+            <label class="text-xs opacity-70 block mb-1">Deine Nachricht</label>
+            <textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz dein Anliegen…"></textarea>
+          </div>
         </div>
         <div id="t-prev"></div>
         <div class="flex items-center justify-between pt-1">
@@ -637,19 +645,29 @@ window.pick=async(inp,prev,max=900)=>{
 };
 window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[130] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full rounded-lg">`;document.body.appendChild(d)};
 
+window.togglePasswordPlatform=()=>{
+  const isReset=val('t-cat')==='Passwort zurücksetzen';
+  $('#t-platform-wrap')?.classList.toggle('hidden',!isReset);
+  $('#t-standard-fields')?.classList.toggle('hidden',isReset);
+  $('#t-prev')?.classList.toggle('hidden',isReset);
+};
 window.createTicket=async()=>{
-  const subj=val('t-subj'),msg=val('t-msg'),cat=val('t-cat');
-  if(!subj||!msg)return toast('Bitte Betreff und Nachricht ausfüllen.');
+  const cat=val('t-cat'),isReset=cat==='Passwort zurücksetzen';
+  if(isReset&&!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
+  const platform=val('t-platform');
+  const subj=isReset?'Passwort zurücksetzen: '+platform:val('t-subj');
+  const msg=isReset?'Bitte das Passwort für '+platform+' zurücksetzen.':val('t-msg');
+  if(isReset&&!platform)return toast('Bitte eine Plattform auswählen.');
+  if(!isReset&&(!subj||!msg))return toast('Bitte Betreff und Nachricht ausfüllen.');
   const now=Date.now();
   const ref=await DB.add('tickets',{
     uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,
     subject:subj,category:cat,status:'Neu',assignedUid:null,assignedName:null,
+    passwordReset:isReset,passwordPlatform:isReset?platform:null,
     createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false
   });
-  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:pendingImg['t-prev']||null,internal:false,ts:now});
-  pendingImg['t-prev']=null;
-  toast('Ticket erstellt.');
-  openChat(ref.id,false);
+  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:isReset?null:(pendingImg['t-prev']||null),internal:false,ts:now});
+  pendingImg['t-prev']=null;toast('Ticket erstellt.');openChat(ref.id,false);
 };
 
 // Admin startet direkt ein Gespräch mit einem Schüler
@@ -874,6 +892,12 @@ const toggleRow=(k,l,d)=>`<div class="glass p-4 flex items-center justify-betwee
 </div>`;
 
 window.setSet=(k,v)=>DB.set('settings','main',{...S.settings,setupDone:true,[k]:v});
+window.savePasswordPlatforms=async()=>{
+  const list=($('#password-platforms')?.value||'').split(/[\n,]/).map(x=>x.trim()).filter(Boolean);
+  if(!list.length)return toast('Bitte mindestens eine Plattform eintragen.');
+  await DB.set('settings','main',{...S.settings,setupDone:true,passwordPlatforms:list});
+  toast('Plattformliste gespeichert.');render();
+};
 window.saveBrand=async()=>{
   await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
   toast('Texte gespeichert.');
@@ -906,7 +930,12 @@ const adminTabs={
       </div>
 
       <div class="glass p-5 space-y-3">
-        <h3 class="font-bold text-base">Chat & Slash-Befehle</h3>
+        <h3 class="font-bold text-base">Externer Passwort-Support</h3>
+        <div class="text-xs opacity-70">Plattformen, die Schüler beim Passwort-Reset auswählen können (eine pro Zeile oder kommagetrennt).</div>
+        <textarea id="password-platforms" rows="3" class="inp" placeholder="Minecraft&#10;Roblox&#10;Instagram">${esc(passwordPlatforms().join('\n'))}</textarea>
+        <button class="btn2 w-full" onclick="savePasswordPlatforms()">Plattformliste speichern</button>
+        <div class="text-xs opacity-70">Die Anfragen werden als normale Support-Tickets angelegt. Es wird kein Reset-Link für Firebase versendet.</div>
+        <h3 class="font-bold text-base pt-3 border-t border-slate-200 dark:border-slate-700">Chat & Slash-Befehle</h3>
         ${toggleRow('slashCommandsEnabled','Eigene Slash-Befehle','Befehle wie /passwort direkt im geöffneten Support-Chat ausführen')}
         ${toggleRow('passwordSupport','Passwort-Support für externe Plattformen','Passwort-Anfragen unabhängig vom Firebase-Login verwalten')}
         <div class="space-y-2"><div class="text-xs opacity-70">Konfigurierte Befehle</div>
