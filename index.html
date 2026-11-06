@@ -50,6 +50,8 @@ const DB={
 const S={
   settings:{
     tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,
+    slashCommandsEnabled:true,passwordSupport:true,
+    slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
   needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],
@@ -783,13 +785,52 @@ window.updStatus=async(id,st)=>{await DB.upd('tickets',id,{status:st,updatedAt:D
 
 window.sendMsg=async(id,asAdmin)=>{
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
-  const now=Date.now();
-  const isInternal=asAdmin&&S.chatNoteMode;
+  if(asAdmin&&!S.chatNoteMode&&text.startsWith('/')){$('#s-c-msg').value='';await runSlashCommand(id,text);return;}
+  const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
   await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?' (Scout)':''),text,img,internal:isInternal,ts:now});
-  if(!isInternal){
-    await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
-  }
+  if(!isInternal)await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
   $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML='';
+};
+
+const defaultSlashCommands=()=>[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}];
+window.openSlashEditor=id=>{
+  const list=S.settings.slashCommands||defaultSlashCommands(),c=list.find(x=>x.id===id)||{id:'cmd-'+Date.now(),name:'neuer-befehl',label:'Neue Nachricht',active:true,requiresPassword:false,roles:['Admin','Medienscout'],message:'',image:''};
+  modal(`<div class="space-y-3"><div class="flex items-center justify-between"><h3 class="font-bold text-lg">${id?'Befehl bearbeiten':'Neuen Befehl erstellen'}</h3><button class="btn2" onclick="closeModal()">Schließen</button></div>
+    <label class="block text-xs">Befehlsname (ohne /)<input id="sc-name" class="inp mt-1" value="${esc(c.name)}" placeholder="passwort"></label>
+    <label class="block text-xs">Bezeichnung<input id="sc-label" class="inp mt-1" value="${esc(c.label)}"></label>
+    <label class="block text-xs">Chat-Nachricht<textarea id="sc-message" rows="4" class="inp mt-1" placeholder="Nachricht an den Schüler…">${esc(c.message||'')}</textarea></label>
+    <label class="block text-xs">Bild-URL (optional)<input id="sc-image" class="inp mt-1" value="${esc(c.image||'')}" placeholder="https://…"></label>
+    <label class="flex items-center gap-2 text-sm"><input id="sc-active" type="checkbox" ${c.active?'checked':''}> Befehl aktiviert</label>
+    <label class="flex items-center gap-2 text-sm"><input id="sc-password" type="checkbox" ${c.requiresPassword?'checked':''}> Vor dem Senden Passwortfeld anzeigen</label>
+    <label class="block text-xs">Wer darf den Befehl nutzen?<select id="sc-roles" class="inp mt-1"><option value="both" ${(c.roles||[]).length!==1?'selected':''}>Admin und Medienscout</option><option value="admin" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Admin'?'selected':''}>Nur Admin</option><option value="scout" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Medienscout'?'selected':''}>Nur Medienscout</option></select></label>
+    <button class="btn w-full" onclick="saveSlashCommand('${esc(c.id)}')">Befehl speichern</button></div>`);
+};
+window.saveSlashCommand=async id=>{
+  const name=val('sc-name').toLowerCase().replace(/[^a-z0-9_-]/g,'');if(!name)return toast('Bitte einen gültigen Befehlsnamen eingeben.');
+  const list=[...(S.settings.slashCommands||defaultSlashCommands())];if(list.some(x=>x.name===name&&x.id!==id))return toast('Diesen Befehl gibt es bereits.');
+  const roles=val('sc-roles')==='admin'?['Admin']:val('sc-roles')==='scout'?['Medienscout']:['Admin','Medienscout'];
+  const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:val('sc-image'),active:$('#sc-active').checked,requiresPassword:$('#sc-password').checked,roles};
+  const next=id?list.map(x=>x.id===id?c:x):[...list,c];await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:next});closeModal();toast('Slash-Befehl gespeichert.');render();
+};
+window.deleteSlashCommand=async id=>{if(!confirm('Diesen Slash-Befehl wirklich löschen?'))return;await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:(S.settings.slashCommands||defaultSlashCommands()).filter(x=>x.id!==id)});toast('Befehl gelöscht.');render();};
+window.runSlashCommand=async(ticketId,input)=>{
+  if(!S.settings.slashCommandsEnabled)return toast('Slash-Befehle sind deaktiviert.');
+  const raw=input.trim().split(/\s+/)[0],name=raw.slice(1).toLowerCase();
+  const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.name===name&&x.active);if(!cmd)return toast('Unbekannter oder deaktivierter Befehl: '+raw);
+  if(!(cmd.roles||['Admin','Medienscout']).includes(S.user.role))return toast('Du darfst diesen Befehl nicht verwenden.');
+  if(name==='passwort'&&!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
+  const ticket=await DB.get('tickets',ticketId);if(!ticket)return toast('Ticket nicht gefunden.');
+  modal(`<div class="space-y-3"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}</p>
+    ${cmd.requiresPassword?'<label class="block text-xs">Neues Passwort (wird nicht in Chat/Firebase gespeichert)<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
+    <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(cmd.message||'')}</div>${cmd.image?'<img src="'+esc(cmd.image)+'" class="rounded-xl max-h-48 object-contain">':''}
+    ${cmd.requiresPassword?'<p class="text-xs text-amber-600 dark:text-amber-400">Das Passwort wird nur lokal kopiert. Die Nachricht informiert den Schüler, dass es separat über einen geschützten Weg mitgeteilt wird.</p>':''}
+    <div class="flex gap-2"><button class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button class="btn flex-1" onclick="submitSlashCommand('${ticketId}','${esc(cmd.id)}')">${cmd.requiresPassword?'Passwort kopieren & Nachricht senden':'Nachricht senden'}</button></div></div>`);
+};
+window.submitSlashCommand=async(ticketId,cmdId)=>{
+  const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.id===cmdId);if(!cmd)return toast('Befehl nicht gefunden.');
+  if(cmd.requiresPassword){const secret=$('#sc-secret')?.value||'';if(!secret)return toast('Bitte das neue Passwort eingeben.');try{await navigator.clipboard.writeText(secret)}catch(e){return toast('Kopieren nicht möglich. Bitte Browser-Berechtigung prüfen.')}$('#sc-secret').value='';}
+  const now=Date.now();await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+' (Scout)',text:cmd.message||'',img:cmd.image||null,internal:false,ts:now});
+  await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'});closeModal();toast(cmd.requiresPassword?'Nachricht gesendet. Passwort liegt nur in deiner Zwischenablage.':'Nachricht gesendet.');
 };
 
 window.sendApp=async()=>{
@@ -864,6 +905,16 @@ const adminTabs={
         <button class="btn" onclick="saveBrand()">Texte speichern</button>
       </div>
 
+      <div class="glass p-5 space-y-3">
+        <h3 class="font-bold text-base">Chat & Slash-Befehle</h3>
+        ${toggleRow('slashCommandsEnabled','Eigene Slash-Befehle','Befehle wie /passwort direkt im geöffneten Support-Chat ausführen')}
+        ${toggleRow('passwordSupport','Passwort-Support für externe Plattformen','Passwort-Anfragen unabhängig vom Firebase-Login verwalten')}
+        <div class="space-y-2"><div class="text-xs opacity-70">Konfigurierte Befehle</div>
+          ${(S.settings.slashCommands||[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}]).map(c=>`<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex items-center gap-2"><div class="flex-1 min-w-0"><div class="font-semibold text-sm">/${esc(c.name)} · ${esc(c.label||'Eigener Befehl')}</div><div class="text-xs opacity-60">${c.active?'Aktiv':'Deaktiviert'} · ${c.requiresPassword?'mit Passwortfeld':'ohne Passwortfeld'}</div></div><button class="btn2" onclick="openSlashEditor('${esc(c.id)}')">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="deleteSlashCommand('${esc(c.id)}')">Löschen</button></div>`).join('')}
+          <button class="btn w-full" onclick="openSlashEditor('')"><i data-lucide="plus" class="w-4 h-4"></i>Eigenen Befehl erstellen</button>
+        </div>
+        <p class="text-xs opacity-70">Sicherheit: Das Passwortfeld kopiert das neue Passwort nur lokal. Das Passwort selbst wird nicht im Chat oder in Firestore gespeichert. Eine direkte einmalige Passwortzustellung benötigt einen geschützten Backend-Endpunkt und passende Firestore-Regeln.</p>
+      </div>
       <div class="glass p-5 space-y-4">
         <h3 class="font-bold text-base">Logo & Hintergrundbild</h3>
         <div class="flex items-center gap-3">
