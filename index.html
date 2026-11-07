@@ -468,7 +468,7 @@ function studentTicketsView(){
 
       <div class="space-y-3 lg:col-span-3">
         <h2 class="font-bold text-base">Meine Unterhaltungen (${S.myTickets.length})</h2>
-        ${S.myTickets.map(t=>`<button onclick="openChat('${t.id}',false)" class="glass w-full p-4 text-left hover:border-blue-500/50 transition flex items-center justify-between gap-3 cursor-pointer">
+        ${S.myTickets.map(t=>`<div class="glass w-full p-4 flex items-center justify-between gap-3"><button onclick="openChat('${t.id}',false)" class="flex-1 text-left hover:border-blue-500/50 transition cursor-pointer">
           <div class="space-y-1">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold text-sm">${esc(t.subject||t.category)}</span>
