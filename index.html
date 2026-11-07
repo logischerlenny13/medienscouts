@@ -674,6 +674,7 @@ window.closeChat=()=>{unsubMsg&&unsubMsg();unsubMsg=null;$('#chat-fullscreen').i
 window.openChat=async(id,asAdmin)=>{
   const t=await DB.get('tickets',id).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
   if(asAdmin&&t.passwordReset&&S.user.role!=='Admin')return toast('Passwort-Tickets sind nur für Admins sichtbar.');
+  if(asAdmin&&S.user.role==='Medienscout'&&S.settings.scoutsCanManageTickets===false)return toast('Medienscouts dürfen Tickets derzeit nicht bearbeiten.');
   if(asAdmin&&!['Admin','Medienscout'].includes(S.user.role))return toast('Keine Berechtigung.');
   if(asAdmin&&S.user.role==='Medienscout'&&t.assignedUid&&t.assignedUid!==S.user.uid&&!t.sharedAfterReopen)return toast('Dieses Ticket wurde bereits von jemand anderem übernommen.');
   if(!asAdmin&&t.uid!==S.user.uid)return toast('Du kannst nur deine eigenen Tickets öffnen.');
@@ -773,6 +774,7 @@ window.claimTicket=async id=>{
   if(t.passwordReset&&S.user.role!=='Admin')return toast('Passwort-Tickets sind nur für Admins sichtbar.');
   if(S.user.role!=='Admin'&&S.user.role!=='Medienscout')return toast('Keine Berechtigung.');
   if(S.user.role==='Medienscout'&&S.settings.scoutsCanManageTickets===false)return toast('Medienscouts dürfen Tickets derzeit nicht bearbeiten.');
+  if(S.user.role==='Medienscout'&&S.settings.ticketClaimEnabled===false)return toast('Die Ticketübernahme ist deaktiviert.');
   if(S.user.role==='Medienscout'&&t.assignedUid&&t.assignedUid!==S.user.uid&&!t.sharedAfterReopen)return toast('Dieses Ticket wurde bereits übernommen.');
   await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});
   if($('#c-assign'))$('#c-assign').textContent='Betreuer: '+S.user.name;
