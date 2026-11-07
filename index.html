@@ -107,6 +107,7 @@ onAuthStateChanged(auth,async u=>{
     await DB.set('users',u.uid,p);
   }
   S.user={uid:u.uid,...p};
+  if(S.settings.personalization&&typeof p.preferences?.darkMode==='boolean')document.documentElement.classList.toggle('dark',p.preferences.darkMode);
   if(S.open=='login')closeModal();
 
   S.unsubs.push(DB.watchMy('tickets',u.uid,d=>{S.myTickets=d;render()}));
@@ -161,7 +162,7 @@ const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 b
       ${S.settings.apps?`<button class="btn2 ${S.view=='apply'?'!bg-blue-600 !text-white':''}" onclick="goProtected('apply')"><i data-lucide="user-plus" class="w-4 h-4"></i><span class="hidden lg:inline">Bewerbung</span></button>`:''}
       ${S.user?`<button class="btn2 ${S.view=='profile'?'!bg-blue-600 !text-white':''}" onclick="S.view='profile';render()"><i data-lucide="user-round" class="w-4 h-4"></i><span class="hidden sm:inline">Profil</span></button>`:''}
       ${isStaff()?`<button class="btn2 ${S.view=='admin'?'!bg-blue-600 !text-white':''}" onclick="S.view='admin';render()"><i data-lucide="shield" class="w-4 h-4 text-blue-500 ${S.view=='admin'?'!text-white':''}"></i><span>Admin</span></button>`:''}
-      <button class="btn2" onclick="document.documentElement.classList.toggle('dark')" title="Hell/Dunkel"><i data-lucide="sun-moon" class="w-4 h-4"></i></button>
+      ${S.settings.personalization?`<button class="btn2" onclick="document.documentElement.classList.toggle('dark')" title="Hell/Dunkel"><i data-lucide="sun-moon" class="w-4 h-4"></i></button>`:''}
       ${S.user
         ? `<div class="flex items-center gap-1.5 pl-1 border-l border-slate-300 dark:border-slate-700">
              <span class="hidden xl:inline text-xs font-medium px-1.5">${esc(S.user.name)}</span>
