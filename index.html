@@ -52,7 +52,7 @@ const S={
   settings:{
     tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,profileExtras:true,feedback:true,personalization:true,mediaLibrary:true,mediaFavorites:true,mediaProgress:true,mediaNewBadge:true,mediaRelated:true,
     slashCommandsEnabled:true,passwordSupport:true,
-    slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
+    slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
   needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],feedbackItems:[],helpArticles:[],privateMessages:[],
@@ -673,6 +673,10 @@ window.closeChat=()=>{unsubMsg&&unsubMsg();unsubMsg=null;$('#chat-fullscreen').i
 
 window.openChat=async(id,asAdmin)=>{
   const t=await DB.get('tickets',id).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
+  if(asAdmin&&t.passwordReset&&S.user.role!=='Admin')return toast('Passwort-Tickets sind nur für Admins sichtbar.');
+  if(asAdmin&&!['Admin','Medienscout'].includes(S.user.role))return toast('Keine Berechtigung.');
+  if(asAdmin&&S.user.role==='Medienscout'&&t.assignedUid&&t.assignedUid!==S.user.uid&&!t.sharedAfterReopen)return toast('Dieses Ticket wurde bereits von jemand anderem übernommen.');
+  if(!asAdmin&&t.uid!==S.user.uid)return toast('Du kannst nur deine eigenen Tickets öffnen.');
   pendingImg['c-prev']=null;S.chatNoteMode=false;
   if(asAdmin&&t.unreadAdmin)DB.upd('tickets',id,{unreadAdmin:false});
   if(!asAdmin&&t.unreadStudent)DB.upd('tickets',id,{unreadStudent:false});
@@ -706,12 +710,13 @@ window.openChat=async(id,asAdmin)=>{
     <!-- Eingabeleiste unten -->
     <div class="glass !rounded-none border-x-0 border-b-0 p-3 sm:p-4">
       <div class="max-w-4xl mx-auto space-y-2">
-        <div id="c-prev"></div>
+        ${!asAdmin&&t.status==='Gelöst'?'<div class="rounded-xl bg-emerald-500/10 p-3 text-sm">Dieses Ticket ist gelöst und schreibgeschützt.</div><button class="btn w-full" onclick="requestReopenTicket(\''+id+'\')">Ich habe noch Fragen</button>':''}
+        <div id="c-prev" ${!asAdmin&&t.status==='Gelöst'?'class="hidden"':''}></div>
         ${asAdmin?`<div class="flex items-center gap-2 text-xs">
           <button id="btn-mode-chat" class="px-3 py-1 rounded-lg font-medium bg-blue-600 text-white cursor-pointer" onclick="setChatMode(false)">Antwort an Schüler</button>
           <button id="btn-mode-note" class="px-3 py-1 rounded-lg font-medium bg-amber-500/20 text-amber-500 cursor-pointer" onclick="setChatMode(true)"><i data-lucide="eye-off" class="w-3.5 h-3.5 inline"></i> Interne Team-Notiz (unsichtbar für Schüler)</button>
         </div>`:''}
-        <div class="flex gap-2">
+        <div class="flex gap-2 ${!asAdmin&&t.status==='Gelöst'?'hidden':''}">
           <label class="btn2 shrink-0" title="Screenshot hochladen"><i data-lucide="image" class="w-5 h-5"></i><input type="file" accept="image/*" hidden onchange="pick(this,'c-prev')"></label>
           <input id="s-c-msg" class="inp" placeholder="Nachricht eingeben…" onkeydown="if(event.key=='Enter')sendMsg('${id}',${asAdmin})">
           <button id="btn-chat-send" class="btn shrink-0" onclick="sendMsg('${id}',${asAdmin})"><i data-lucide="send" class="w-4 h-4"></i>Senden</button>
@@ -764,15 +769,37 @@ window.setChatMode=isNote=>{
 };
 
 window.claimTicket=async id=>{
+  const t=await DB.get('tickets',id);if(!t)return toast('Ticket nicht gefunden.');
+  if(t.passwordReset&&S.user.role!=='Admin')return toast('Passwort-Tickets sind nur für Admins sichtbar.');
+  if(S.user.role!=='Admin'&&S.user.role!=='Medienscout')return toast('Keine Berechtigung.');
+  if(S.user.role==='Medienscout'&&S.settings.scoutsCanManageTickets===false)return toast('Medienscouts dürfen Tickets derzeit nicht bearbeiten.');
+  if(S.user.role==='Medienscout'&&t.assignedUid&&t.assignedUid!==S.user.uid&&!t.sharedAfterReopen)return toast('Dieses Ticket wurde bereits übernommen.');
   await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});
   if($('#c-assign'))$('#c-assign').textContent='Betreuer: '+S.user.name;
   if($('#c-st'))$('#c-st').innerHTML=badge('In Bearbeitung');
   toast('Du hast das Ticket übernommen.');
 };
 
-window.updStatus=async(id,st)=>{await DB.upd('tickets',id,{status:st,updatedAt:Date.now()});$('#c-st').innerHTML=badge(st)};
+window.updStatus=async(id,st)=>{
+  const t=await DB.get('tickets',id);if(!t)return toast('Ticket nicht gefunden.');
+  if(t.passwordReset&&S.user.role!=='Admin')return toast('Nur Admins dürfen Passwort-Tickets bearbeiten.');
+  if(S.user.role!=='Admin'&&S.user.role!=='Medienscout')return toast('Keine Berechtigung.');
+  if(S.user.role==='Medienscout'&&t.assignedUid!==S.user.uid&&!t.sharedAfterReopen)return toast('Du hast dieses Ticket nicht übernommen.');
+  await DB.upd('tickets',id,{status:st,updatedAt:Date.now()});$('#c-st').innerHTML=badge(st);
+  if(st==='Gelöst'){const box=$('#s-c-msg');if(box)box.disabled=true;const send=$('#btn-chat-send');if(send)send.disabled=true;}
+};
+window.requestReopenTicket=async id=>{
+  const t=await DB.get('tickets',id);if(!t||t.uid!==S.user.uid||t.status!=='Gelöst')return toast('Ticket kann nicht wieder geöffnet werden.');
+  if(!confirm('Wenn du fortfährst, können deine bisherigen normalen Ticket-Nachrichten auch von weiteren berechtigten Medienscouts und Admins gelesen werden. Gesonderte Passwortdaten bleiben privat. Möchtest du dieses Ticket wieder öffnen?'))return;
+  await DB.upd('tickets',id,{status:'Neu',sharedAfterReopen:true,assignedUid:null,assignedName:null,updatedAt:Date.now(),unreadAdmin:true});
+  closeChat();openChat(id,false);
+};
 
 window.sendMsg=async(id,asAdmin)=>{
+  const ticket=await DB.get('tickets',id);if(!ticket)return toast('Ticket nicht gefunden.');
+  if(ticket.status==='Gelöst'&&!asAdmin)return toast('Dieses Ticket ist gelöst. Nutze „Ich habe noch Fragen“, um es wieder zu öffnen.');
+  if(ticket.passwordReset&&asAdmin&&S.user.role!=='Admin')return toast('Nur Admins dürfen Passwort-Tickets bearbeiten.');
+  if(asAdmin&&S.user.role==='Medienscout'&&ticket.assignedUid!==S.user.uid&&!ticket.sharedAfterReopen)return toast('Übernimm zuerst dieses Ticket.');
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
   if(asAdmin&&!S.chatNoteMode&&text.startsWith('/')){$('#s-c-msg').value='';await runSlashCommand(id,text);return;}
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
@@ -808,7 +835,8 @@ window.runSlashCommand=async(ticketId,input)=>{
   if(!S.settings.slashCommandsEnabled)return toast('Slash-Befehle sind deaktiviert.');
   const raw=input.trim().split(/\s+/)[0],name=raw.slice(1).toLowerCase();
   const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.name===name&&x.active);if(!cmd)return toast('Unbekannter oder deaktivierter Befehl: '+raw);
-  if(!(cmd.roles||['Admin','Medienscout']).includes(S.user.role))return toast('Du darfst diesen Befehl nicht verwenden.');
+  if(name==='passwort'&&S.user.role!=='Admin')return toast('Der Passwort-Befehl ist ausschließlich für Admins.');
+  if(!(cmd.roles||['Admin']).includes(S.user.role))return toast('Du darfst diesen Befehl nicht verwenden.');
   if(name==='passwort'&&!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
   const ticket=await DB.get('tickets',ticketId);if(!ticket)return toast('Ticket nicht gefunden.');
   modal(`<div class="space-y-3"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}</p>
@@ -895,7 +923,8 @@ const TABS=[
 ];
 
 function adminView(){
-  const nNew=S.tickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
+  const visibleTickets=S.tickets.filter(t=>t.status!=='Gelöst'&&(!t.passwordReset||S.user.role==='Admin')&&(S.user.role==='Admin'||!t.assignedUid||t.assignedUid===S.user.uid||t.sharedAfterReopen));
+  const nNew=visibleTickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
   return `<div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -966,6 +995,14 @@ const adminTabs={
         <button class="btn" onclick="saveBrand()">Texte speichern</button>
       </div>
 
+      <div class="glass p-5 space-y-3">
+        <h3 class="font-bold text-base">Ticket-Einstellungen</h3>
+        <div class="text-xs font-semibold uppercase opacity-60">Passwort-Tickets</div>
+        <div class="text-sm">Bearbeitung: <b>Nur Admins</b></div>
+        <div class="text-xs font-semibold uppercase opacity-60 pt-2 border-t border-slate-200 dark:border-slate-700">Normale Tickets</div>
+        ${toggleRow('scoutsCanManageTickets','Medienscouts dürfen normale Tickets bearbeiten','Wenn deaktiviert, können nur Admins normale Tickets bearbeiten.')}
+        ${toggleRow('ticketClaimEnabled','Ticketübernahme','Admins und berechtigte Medienscouts können Tickets übernehmen.')}
+      </div>
       <div class="glass p-5 space-y-3">
         <h3 class="font-bold text-base">Externer Passwort-Support</h3>
         <div class="text-xs opacity-70">Plattformen, die Schüler beim Passwort-Reset auswählen können (eine pro Zeile oder kommagetrennt).</div>
@@ -1068,7 +1105,7 @@ const adminTabs={
     <div class="flex items-center justify-between">
       <p class="text-xs opacity-70">Klicke auf ein Ticket für den Vollbild-Chat oder übernimm es direkt.</p>
     </div>
-    ${S.tickets.map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
+    ${visibleTickets.map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
       <button onclick="openChat('${t.id}',true)" class="flex-1 text-left flex items-center gap-3 cursor-pointer min-w-[240px]">
         ${t.unreadAdmin?`<span class="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" title="Neue Nachricht"></span>`:''}
         <div>
