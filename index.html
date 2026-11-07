@@ -200,7 +200,7 @@ window.openVideo=id=>{
     <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h2 class="text-xl font-bold">${esc(v.title)}</h2><div class="text-xs opacity-60 mt-1">${esc(v.cat||'Video')} · ${fmt(v.createdAt)}</div></div><button class="btn2 shrink-0" onclick="updateMediaState('videos','${v.id}','favorites')" title="Merken"><i data-lucide="bookmark" class="w-4 h-4 ${mediaIsFavorite('videos',v.id)?'text-amber-500':''}"></i></button></div>
     ${v.desc?'<div class="pt-3 border-t border-slate-200 dark:border-slate-700"><h3 class="font-semibold text-sm mb-1">Beschreibung</h3><p class="text-sm opacity-80 whitespace-pre-wrap leading-relaxed">'+esc(v.desc)+'</p></div>':''}
     <a class="btn2 w-full justify-center" href="https://www.youtube.com/watch?v=${encodeURIComponent(v.vid)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" class="w-4 h-4"></i>Auf YouTube öffnen</a>
-    ${related.length?'<div class="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-2"><h3 class="font-semibold text-sm">Weitere Videos zum Thema</h3>'+related.map(x=>'<button class="block w-full text-left p-2 rounded-lg hover:bg-slate-500/10 text-sm" onclick="openVideo(''+x.id+'')">'+esc(x.title)+'</button>').join('')+'</div>':''}
+    ${related.length?'<div class="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-2"><h3 class="font-semibold text-sm">Weitere Videos zum Thema</h3>'+related.map(x=>`<button class="block w-full text-left p-2 rounded-lg hover:bg-slate-500/10 text-sm" onclick="openVideo('${x.id}')">${esc(x.title)}</button>`).join('')+'</div>':''}
   </div>`);
   const panel=$('#modal .max-w-xl');if(panel)panel.classList.replace('max-w-xl','max-w-4xl');
 };
