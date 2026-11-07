@@ -1013,13 +1013,13 @@ const adminTabs={
 
       <div class="glass p-5 space-y-3">
         <h3 class="font-bold text-base">Passwort-Ticketsystem</h3><p class="text-xs opacity-70">Eigene Einstellungen für Passwort-Anfragen, Plattformen, die Anleitung und den Admin-Befehl zur Übergabe der Zugangsdaten.</p>
+        ${toggleRow('passwordSupport','Passwort-Zurücksetzen-System','Schaltet die Passwort-Zurücksetzen-Funktion im Ticketformular vollständig ein oder aus. Bei Aktivierung erscheint „Passwort zurücksetzen“ als auswählbare Kategorie.')}
         <div class="text-xs opacity-70">Plattformen, die Schüler beim Passwort-Reset auswählen können (eine pro Zeile oder kommagetrennt).</div>
         <textarea id="password-platforms" rows="3" class="inp" placeholder="Minecraft&#10;Roblox&#10;Instagram">${esc(passwordPlatforms().join('\n'))}</textarea>
         <button class="btn2 w-full" onclick="savePasswordPlatforms()">Plattformliste speichern</button>
         <div class="text-xs opacity-70">Die Anfragen werden als normale Support-Tickets angelegt. Es wird kein Reset-Link für Firebase versendet.</div>
         <h3 class="font-bold text-base pt-3 border-t border-slate-200 dark:border-slate-700">Anleitung & Chat-Befehle</h3>
         ${toggleRow('slashCommandsEnabled','Eigene Slash-Befehle','Befehle wie /passwort direkt im geöffneten Support-Chat ausführen')}
-        ${toggleRow('passwordSupport','Passwort-Support für externe Plattformen','Passwort-Anfragen unabhängig vom Firebase-Login verwalten')}
         <div class="space-y-2"><div class="text-xs opacity-70">Konfigurierte Befehle</div>
           ${(S.settings.slashCommands||[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}]).map(c=>`<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex items-center gap-2"><div class="flex-1 min-w-0"><div class="font-semibold text-sm">/${esc(c.name)} · ${esc(c.label||'Eigener Befehl')}</div><div class="text-xs opacity-60">${c.active?'Aktiv':'Deaktiviert'} · ${c.requiresPassword?'mit Passwortfeld':'ohne Passwortfeld'}</div></div><button class="btn2" onclick="openSlashEditor('${esc(c.id)}')">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="deleteSlashCommand('${esc(c.id)}')">Löschen</button></div>`).join('')}
           <button class="btn w-full" onclick="openSlashEditor('')"><i data-lucide="plus" class="w-4 h-4"></i>Eigenen Befehl erstellen</button>
