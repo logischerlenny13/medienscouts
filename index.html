@@ -189,6 +189,7 @@ window.markMediaSeen=async(kind,id)=>{
   state[field]=[...(state[field]||[]),id];
   S.user.mediaState=state;
   await DB.upd('users',S.user.uid,{mediaState:state});
+  render();
 };
 window.openVideo=id=>{
   const v=S.videos.find(x=>x.id===id);if(!v)return toast('Video nicht gefunden.');
@@ -213,7 +214,7 @@ function mediaCard(kind,x){
       ${x.pinned?'<span class="absolute top-2 left-2 text-[11px] rounded-full bg-amber-500 text-white px-2 py-1"><i data-lucide="pin" class="w-3 h-3 inline"></i> Angepinnt</span>':''}
       ${S.settings.mediaNewBadge!==false&&fresh?'<span class="absolute top-2 right-2 text-[11px] rounded-full bg-emerald-600 text-white px-2 py-1">NEU</span>':''}
     </button>
-    <div class="p-4 space-y-2"><div class="flex items-center justify-between gap-2"><span class="text-[11px] rounded-md bg-rose-500/10 text-rose-500 px-2 py-1">${esc(x.cat||'Video')}</span>${S.settings.mediaProgress!==false?`<span class="text-[11px] opacity-60">${seen?'Angesehen':'Noch nicht angesehen'}</span>`:''}</div><h3 class="font-bold">${esc(x.title)}</h3><p class="text-xs opacity-70 line-clamp-2">${esc(x.desc||'')}</p><div class="flex items-center justify-between pt-1"><button class="text-sm font-semibold text-blue-600" onclick="openVideo('${x.id}')">Video ansehen →</button>${S.settings.mediaFavorites!==false?`<button class="btn2 !p-2" onclick="updateMediaState('videos','${x.id}','favorites')" title="Merken"><i data-lucide="bookmark" class="w-4 h-4 ${favorite?'text-amber-500':''}"></i></button>`:''}</div></div>
+    <div class="p-4 space-y-2"><div class="flex items-center justify-between gap-2"><span class="text-[11px] rounded-md bg-rose-500/10 text-rose-500 px-2 py-1">${esc(x.cat||'Video')}</span>${S.settings.mediaProgress!==false?`<span class="text-[11px] opacity-60">${seen?'Angesehen':'Noch nicht angesehen'}</span>`:''}</div><h3 class="font-bold">${esc(x.title)}</h3><div class="flex items-center justify-between pt-1"><button class="text-sm font-semibold text-blue-600" onclick="openVideo('${x.id}')">Video ansehen →</button>${S.settings.mediaFavorites!==false?`<button class="btn2 !p-2" onclick="updateMediaState('videos','${x.id}','favorites')" title="Merken"><i data-lucide="bookmark" class="w-4 h-4 ${favorite?'text-amber-500':''}"></i></button>`:''}</div></div>
   </article>`;
   const words=String(x.body||'').split(/\s+/).length,readMin=Math.max(1,Math.round(words/160));
   return `<article class="glass p-5 flex flex-col gap-3">
