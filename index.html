@@ -35,6 +35,7 @@ const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
 // ---------- Datenschicht ----------
 const DB={
   watch:(col,cb,order)=>onSnapshot(order?query(collection(db,col),orderBy(order,'desc')):collection(db,col),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
+  watchPrivate:(uid,cb)=>{let a=[],b=[];const emit=()=>cb([...new Map([...a,...b].map(x=>[x.id,x])).values()].sort((x,y)=>(y.createdAt||0)-(x.createdAt||0)));const u1=onSnapshot(query(collection(db,'privateMessages'),where('fromUid','==',uid)),s=>{a=s.docs.map(d=>({id:d.id,...d.data()}));emit()});const u2=onSnapshot(query(collection(db,'privateMessages'),where('toUid','==',uid)),s=>{b=s.docs.map(d=>({id:d.id,...d.data()}));emit()});return()=>{u1();u2()};},
   watchMy:(col,uid,cb)=>onSnapshot(query(collection(db,col),where('uid','==',uid)),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt)))),
   add:(col,d)=>addDoc(collection(db,col),d),
   set:(col,id,d)=>setDoc(doc(db,col,id),d),
@@ -54,7 +55,7 @@ const S={
     slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
-  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],feedbackItems:[],
+  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],feedbackItems:[],helpArticles:[],privateMessages:[],
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
   adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,
   chatNoteMode:false,surveyBuilderQs:[],surveyResults:[],activeResultSurvey:null,unsubs:[]
@@ -113,6 +114,11 @@ onAuthStateChanged(auth,async u=>{
   S.unsubs.push(DB.watchMy('tickets',u.uid,d=>{S.myTickets=d;render()}));
   S.unsubs.push(DB.watchMy('applications',u.uid,d=>{S.myApps=d;render()}));
 
+  S.unsubs.push(DB.watchPrivate(u.uid,d=>{S.privateMessages=d;render()}));
+  S.unsubs.push(DB.watch('publicUsers',d=>{S.users=d;render()}));
+  await DB.set('publicUsers',u.uid,{name:S.user.name,role:S.user.role||'Schüler',klass:S.user.klass||''});
+  S.unsubs.push(DB.watch('helpArticles',d=>{S.helpArticles=d;render()},'createdAt'));
+
   if(['Admin','Medienscout'].includes(p.role)){
     const w=(c,k,o)=>S.unsubs.push(DB.watch(c,d=>{S[k]=d;render()},o));
     w('tickets','tickets','updatedAt');
@@ -138,6 +144,9 @@ function render(){
   else if(S.view=='tickets'&&S.user)content=studentTicketsView();
   else if(S.view=='apply'&&S.user)content=studentApplyView();
   else if(S.view=='surveys')content=surveysView();
+  else if(S.view=='activity')content=activityOverviewView();
+  else if(S.view=='privateMessages'&&S.user)content=privateMessagesView();
+  else if(S.view=='help')content=helpCenterView();
   else if(S.view=='article')content=articlePageView();
   else if(S.view=='videos'||S.view=='articles')content=mediaLibraryView(S.view);
   else content=homeView();
@@ -158,6 +167,9 @@ const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 b
 
     <div class="ml-auto flex items-center gap-1.5 sm:gap-2">
       <button class="btn2 ${['home','article','videos','articles'].includes(S.view)?'!bg-blue-600 !text-white':''}" onclick="S.view='home';render()"><i data-lucide="book-open" class="w-4 h-4"></i><span class="hidden md:inline">Start & Wissen</span></button>
+      ${S.settings.activityOverview?`<button class="btn2 ${S.view=='activity'?'!bg-blue-600 !text-white':''}" onclick="S.view='activity';render()"><i data-lucide="activity" class="w-4 h-4"></i><span class="hidden md:inline">Aktivität</span></button>`:''}
+      ${S.settings.privateMessages&&S.user?`<button class="btn2 ${S.view=='privateMessages'?'!bg-blue-600 !text-white':''}" onclick="S.view='privateMessages';render()"><i data-lucide="mail" class="w-4 h-4"></i><span class="hidden md:inline">Nachrichten</span>${S.privateMessages.filter(m=>m.toUid===S.user.uid&&!m.read).length?'<span class="w-2 h-2 rounded-full bg-rose-500"></span>':''}</button>`:''}
+      ${S.settings.helpCenter?`<button class="btn2 ${S.view=='help'?'!bg-blue-600 !text-white':''}" onclick="S.view='help';render()"><i data-lucide="life-buoy" class="w-4 h-4"></i><span class="hidden md:inline">Hilfe-Center</span></button>`:''}
       ${S.settings.surveys?`<button class="btn2 ${S.view=='surveys'?'!bg-blue-600 !text-white':''}" onclick="S.view='surveys';S.activeSurveyId=null;render()"><i data-lucide="clipboard-list" class="w-4 h-4"></i><span class="hidden md:inline">Umfragen</span></button>`:''}
       ${S.settings.tickets?`<button class="btn2 ${S.view=='tickets'?'!bg-blue-600 !text-white':''}" onclick="goProtected('tickets')"><i data-lucide="message-square-text" class="w-4 h-4"></i><span class="hidden sm:inline">Tickets</span>${S.myTickets.some(t=>t.unreadStudent)?`<span class="w-2 h-2 rounded-full bg-rose-500"></span>`:''}</button>`:''}
       ${S.settings.apps?`<button class="btn2 ${S.view=='apply'?'!bg-blue-600 !text-white':''}" onclick="goProtected('apply')"><i data-lucide="user-plus" class="w-4 h-4"></i><span class="hidden lg:inline">Bewerbung</span></button>`:''}
@@ -473,6 +485,18 @@ function studentTicketsView(){
   </div>`;
 }
 
+
+function activityOverviewView(){const news=[...S.articles.map(a=>({title:a.title||'Artikel',detail:'Neuer Artikel',ts:a.createdAt})),...S.videos.map(v=>({title:v.title||'Video',detail:'Neues Video',ts:v.createdAt})),...S.boardItems.map(x=>({title:x.title||'Neuigkeit',detail:'Schwarzes Brett',ts:x.createdAt}))].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,40);return `<div class="space-y-5"><h1 class="text-2xl font-bold">Aktivitätsübersicht</h1><p class="text-sm opacity-70">Neuigkeiten und wichtige Veröffentlichungen.</p>${news.map(n=>`<article class="glass p-4"><div class="flex justify-between gap-3"><b>${esc(n.title)}</b><span class="text-xs opacity-50">${fmt(n.ts)}</span></div><div class="text-sm opacity-70 mt-1">${esc(n.detail)}</div></article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine Neuigkeiten vorhanden.</div>'}</div>`;}
+function privateMessagesView(){const contacts=S.users.filter(u=>u.id!==S.user.uid&&canSendPrivateMessage(S.user,u));const msgs=S.privateMessages.slice();return `<div class="space-y-5"><h1 class="text-2xl font-bold">Private Nachrichten</h1><section class="glass p-5 space-y-3"><h2 class="font-bold">Neue Nachricht</h2><select id="pm-to" class="inp"><option value="">Empfänger auswählen</option>${contacts.map(u=>`<option value="${u.id}">${esc(u.name)} · ${esc(u.role||'Schüler')}</option>`).join('')}</select><textarea id="pm-text" class="inp" rows="3" placeholder="Nachricht schreiben…"></textarea><button class="btn" onclick="sendPrivateMessage()">Senden</button></section><section class="space-y-2"><h2 class="font-bold">Unterhaltungen</h2>${msgs.map(m=>`<article class="glass p-4"><div class="flex justify-between gap-2 text-xs opacity-60"><b>${m.fromUid===S.user.uid?'An: '+esc(m.toName):'Von: '+esc(m.fromName)}</b><span>${fmt(m.createdAt)}</span></div><p class="mt-2 text-sm whitespace-pre-wrap">${esc(m.text)}</p>${m.toUid===S.user.uid&&!m.read?`<button class="btn2 mt-2" onclick="markPrivateRead('${m.id}')">Als gelesen markieren</button>`:''}</article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine privaten Nachrichten.</div>'}</section></div>`;}
+function helpCenterView(){return `<div class="space-y-5"><h1 class="text-2xl font-bold">Hilfe-Center</h1><p class="text-sm opacity-70">Antworten auf häufige Fragen und Unterstützung.</p><div class="grid sm:grid-cols-2 gap-3">${S.helpArticles.map(a=>`<article class="glass p-4"><h2 class="font-bold">${esc(a.title)}</h2><p class="text-sm mt-2 whitespace-pre-wrap">${esc(a.body)}</p></article>`).join('')}</div>${S.helpArticles.length?'':'<div class="glass p-4 opacity-60">Noch keine Hilfethemen veröffentlicht.</div>'}<section class="glass p-5 space-y-2"><h2 class="font-bold">Du brauchst persönliche Hilfe?</h2><button class="btn" onclick="goProtected('tickets')">Support kontaktieren</button></section>${isStaff()?helpAdminEditor():''}</div>`;}
+function helpAdminEditor(){return `<section class="glass p-5 space-y-3"><h2 class="font-bold">Hilfe-Thema hinzufügen</h2><input id="help-title" class="inp" placeholder="Titel"><textarea id="help-body" class="inp" rows="4" placeholder="Erklärung / Antwort"></textarea><button class="btn" onclick="saveHelpArticle()">Veröffentlichen</button>${S.helpArticles.map(a=>`<div class="flex justify-between gap-2 text-sm"><span>${esc(a.title)}</span><button class="btn2 !text-rose-500" onclick="deleteHelpArticle('${a.id}')">Löschen</button></div>`).join('')}</section>`;}
+const canSendPrivateMessage=(from,to)=>{const p=S.settings.privateMessagingPolicy||'all';return !(p==='staff'&&from.role!=='Admin'&&from.role!=='Medienscout'&&to.role!=='Admin'&&to.role!=='Medienscout');};
+window.setPrivateMessagingPolicy=async p=>{if(!isStaff()||S.user.role!=='Admin')return toast('Nur Admins dürfen das ändern.');await DB.set('settings','main',{...S.settings,setupDone:true,privateMessagingPolicy:p});toast('Nachrichtenberechtigung gespeichert.');};
+window.sendPrivateMessage=async()=>{if(!S.user)return;const to=S.users.find(u=>u.id===val('pm-to')),message=val('pm-text');if(!to||!message)return toast('Bitte Empfänger und Nachricht angeben.');if(!canSendPrivateMessage(S.user,to))return toast('Du darfst dieser Person keine private Nachricht schreiben.');await DB.add('privateMessages',{fromUid:S.user.uid,fromName:S.user.name,fromRole:S.user.role||'Schüler',toUid:to.id,toName:to.name,text:message,read:false,createdAt:Date.now()});toast('Nachricht gesendet.');render();};
+window.markPrivateRead=async id=>{const m=S.privateMessages.find(x=>x.id===id);if(m&&m.toUid===S.user.uid)await DB.upd('privateMessages',id,{read:true});};
+window.saveHelpArticle=async()=>{if(S.user?.role!=='Admin')return toast('Nur Admins dürfen Hilfethemen veröffentlichen.');const title=val('help-title'),body=val('help-body');if(!title||!body)return toast('Bitte Titel und Inhalt ausfüllen.');await DB.add('helpArticles',{title,body,createdAt:Date.now()});toast('Hilfethema veröffentlicht.');render();};
+window.deleteHelpArticle=async id=>{if(S.user?.role!=='Admin')return toast('Nur Admins dürfen Hilfethemen löschen.');if(confirm('Hilfethema löschen?'))await DB.del('helpArticles',id);};
+
 // ---------- Schüler-Ansicht: Bewerbung ----------
 function studentApplyView(){
   if(!S.settings.apps)return `<div class="glass p-6 text-amber-500">Die Bewerbungsphase ist aktuell geschlossen.</div>`;
@@ -510,7 +534,7 @@ window.goProtected=target=>{
   S.view=target;render();
 };
 
-const modal=h=>{$('#modal').innerHTML=`<div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 w-full max-w-xl max-h-[90vh] overflow-auto p-6 relative">${h}</div></div>`;icons()};
+const modal=h=>{$('#modal').innerHTML=`<div class="fixed inset-0 z-[110] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 w-full max-w-xl max-h-[90vh] overflow-auto p-6 relative">${h}</div></div>`;icons()};
 window.closeModal=()=>{S.open=null;$('#modal').innerHTML=''};
 
 window.openAuth=(mode='login')=>{
@@ -613,7 +637,7 @@ window.createTicket=async()=>{
     passwordReset:isReset,passwordPlatform:isReset?platform:null,
     createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false
   });
-  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,text:msg,img:isReset?null:(pendingImg['t-prev']||null),internal:false,ts:now});
+  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,senderRole:'User',text:msg,img:isReset?null:(pendingImg['t-prev']||null),internal:false,ts:now});
   pendingImg['t-prev']=null;toast('Ticket erstellt.');openChat(ref.id,false);
 };
 
@@ -639,7 +663,7 @@ window.startTicketForStudent=async(uid,name,email)=>{
     assignedUid:S.user.uid,assignedName:S.user.name,
     createdAt:now,updatedAt:now,unreadAdmin:false,unreadStudent:true
   });
-  await DB.addMsg(ref.id,{from:'scout',senderName:S.user.name+' (Scout)',text:msg,img:null,internal:false,ts:now});
+  await DB.addMsg(ref.id,{from:'scout',senderName:S.user.name+(S.user.role==='Admin'?' (Admin)':' (Medienscout)'),senderRole:S.user.role==='Admin'?'Admin':'Medienscout',text:msg,img:null,internal:false,ts:now});
   closeModal();
   toast('Nachricht an Schüler gesendet.');
   openChat(ref.id,true);
@@ -711,7 +735,7 @@ window.openChat=async(id,asAdmin)=>{
         </div></div>`;
       }
       return `<div class="flex ${m.from==mySide?'justify-end':'justify-start'}">
-        <div class="max-w-[80%] sm:max-w-[70%] px-4 py-3 rounded-2xl text-sm shadow-xs ${m.from==mySide?'bg-blue-600 text-white':'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
+        <div class="max-w-[80%] sm:max-w-[70%] px-4 py-3 rounded-2xl text-sm shadow-xs ${m.senderRole==='Admin'?'bg-rose-600 text-white':m.senderRole==='Medienscout'?'bg-amber-400 text-slate-950':m.senderRole==='User'?'bg-emerald-600 text-white':m.from==mySide?'bg-blue-600 text-white':'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
           <div class="text-[11px] opacity-75 mb-1 font-medium">${esc(m.senderName||(m.from=='scout'?'Medienscout':'Schüler'))} · ${fmt(m.ts)}</div>
           ${m.text?`<div class="leading-relaxed">${esc(m.text).replace(/\n/g,'<br>')}</div>`:''}
           ${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 cursor-zoom-in border border-white/20">`:''}
@@ -752,7 +776,7 @@ window.sendMsg=async(id,asAdmin)=>{
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
   if(asAdmin&&!S.chatNoteMode&&text.startsWith('/')){$('#s-c-msg').value='';await runSlashCommand(id,text);return;}
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
-  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?' (Scout)':''),text,img,internal:isInternal,ts:now});
+  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(S.user.role==='Admin'?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(S.user.role==='Admin'?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now});
   if(!isInternal)await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
   $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML='';
 };
@@ -926,6 +950,10 @@ const adminTabs={
       ${toggleRow('artFeedback','Hilfreich-Abfrage unter Artikeln (👍/👎)','Zeigt unter jeder Anleitung die Frage „Hat dir dieser Artikel geholfen?“')}
       ${toggleRow('board','Schwarzes Brett (Fundsachen & News)','Zeigt auf der Startseite aktuelle Meldungen & digitale Fundsachen')}
       ${toggleRow('surveys','Umfrage-Modul','Schaltet den Bereich für anonyme & nicht-anonyme Umfragen frei')}
+      ${toggleRow('activityOverview','Aktivitätsübersicht','Neuigkeiten und veröffentlichte Portal-Aktivitäten anzeigen')}
+      ${toggleRow('privateMessages','Private Nachrichten','Direkte Nachrichten zwischen registrierten Nutzern')}
+      ${toggleRow('helpCenter','Hilfe-Center','Hilfethemen und Antworten zentral bereitstellen')}
+      <section class="glass p-4 space-y-2"><h4 class="font-bold text-sm">Wer darf wem private Nachrichten schreiben?</h4><select class="inp" onchange="setPrivateMessagingPolicy(this.value)"><option value="all" ${S.settings.privateMessagingPolicy==='all'?'selected':''}>Alle dürfen allen schreiben</option><option value="staff" ${S.settings.privateMessagingPolicy==='staff'?'selected':''}>Schüler dürfen nur Medienscouts und Admins schreiben</option><option value="moderated" ${S.settings.privateMessagingPolicy==='moderated'?'selected':''}>Alle dürfen allen schreiben – Admins moderieren</option></select></section>
     </div>
 
     <div class="space-y-4">
