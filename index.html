@@ -27,7 +27,7 @@
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where,Timestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
@@ -42,6 +42,8 @@ const DB={
   upd:(col,id,d)=>updateDoc(doc(db,col,id),d),
   del:(col,id)=>deleteDoc(doc(db,col,id)),
   get:async(col,id)=>{const s=await getDoc(doc(db,col,id));return s.exists()?{id:s.id,...s.data()}:null},
+  passwordGet:async id=>{const s=await getDoc(doc(db,'ticketPasswords',id));return s.exists()?{id:s.id,...s.data()}:null},
+  passwordSet:(id,d)=>setDoc(doc(db,'ticketPasswords',id),d),
   msgs:(id,cb)=>onSnapshot(query(collection(db,'tickets',id,'messages'),orderBy('ts')),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
   addMsg:(id,m)=>addDoc(collection(db,'tickets',id,'messages'),m),
   surveyResp:(sid,cb)=>onSnapshot(collection(db,'surveys',sid,'responses'),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
@@ -681,6 +683,8 @@ window.closeChat=()=>{unsubMsg&&unsubMsg();unsubMsg=null;$('#chat-fullscreen').i
 window.openChat=async(id,asAdmin)=>{
   const t=await DB.get('tickets',id).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
   pendingImg['c-prev']=null;S.chatNoteMode=false;
+  if(t.passwordReset&&S.user?.role!=='Admin'&&asAdmin)return toast('Passwort-Tickets sind ausschließlich für Admins sichtbar.');
+  if(t.passwordReset&&!asAdmin&&t.uid!==S.user?.uid)return toast('Kein Zugriff auf dieses Ticket.');
   if(asAdmin&&t.unreadAdmin)DB.upd('tickets',id,{unreadAdmin:false});
   if(!asAdmin&&t.unreadStudent)DB.upd('tickets',id,{unreadStudent:false});
 
@@ -729,11 +733,13 @@ window.openChat=async(id,asAdmin)=>{
   icons();
 
   unsubMsg&&unsubMsg();
-  unsubMsg=DB.msgs(id,ms=>{
+  unsubMsg=DB.msgs(id,async ms=>{
     const l=$('#c-list');if(!l)return;
     const mySide=asAdmin?'scout':'student';
     const visibleMs=ms.filter(m=>!m.internal||asAdmin);
-    l.innerHTML=visibleMs.map(m=>{
+    const passwordCard=t.passwordReset&&(asAdmin||t.uid===S.user?.uid)?await DB.passwordGet(id).catch(()=>null):null;
+    const privateCard=passwordCard&&passwordCard.expiresAt?.toMillis?.()>Date.now()?`<section class="glass p-4 border-2 border-amber-400 space-y-3"><div class="font-bold">🔐 Private Zugangsdaten</div><p class="text-xs opacity-70">Nur für dich und die Admins sichtbar. Bestätige vor dem Anzeigen, dass niemand anderes deinen Bildschirm sehen kann.</p><button class="btn2" onclick="revealTicketPassword('${id}')">Zugangsdaten anzeigen</button><div id="pw-card-${id}" class="hidden space-y-2"><div class="text-sm">Plattform: <b>${esc(passwordCard.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(passwordCard.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">••••••••••</b></div><button class="btn2" onclick="copyTicketPassword('${id}')">Passwort kopieren</button><p class="text-xs opacity-60">Löschung nach drei Tagen vorgesehen.</p></div></section>`:'';
+    l.innerHTML=privateCard+visibleMs.map(m=>{
       if(m.internal){
         return `<div class="flex justify-center"><div class="max-w-xl w-full px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs">
           <div class="font-bold flex items-center gap-1.5 mb-0.5"><i data-lucide="lock" class="w-3.5 h-3.5"></i>Interne Scout-Notiz von ${esc(m.senderName)} · ${fmt(m.ts)}</div>
@@ -753,6 +759,8 @@ window.openChat=async(id,asAdmin)=>{
   });
 };
 
+window.revealTicketPassword=async id=>{if(!confirm('Bitte prüfe, dass niemand anderes deinen Bildschirm sehen kann. Zugangsdaten jetzt anzeigen?'))return;const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');const el=$('#pw-value-'+id);if(el)el.textContent=d.password;$('#pw-card-'+id)?.classList.remove('hidden');};
+window.copyTicketPassword=async id=>{const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');try{await navigator.clipboard.writeText(d.password);toast('Passwort kopiert.')}catch(e){toast('Kopieren nicht möglich.')}};
 window.setChatMode=isNote=>{
   S.chatNoteMode=isNote;
   const bChat=$('#btn-mode-chat'),bNote=$('#btn-mode-note'),inp=$('#s-c-msg'),sendBtn=$('#btn-chat-send');
@@ -771,6 +779,9 @@ window.setChatMode=isNote=>{
 };
 
 window.claimTicket=async id=>{
+  const ticket=S.tickets.find(t=>t.id===id)||await DB.get('tickets',id);
+  if(ticket?.passwordReset&&S.user?.role!=='Admin')return toast('Passwort-Tickets dürfen nur Admins übernehmen.');
+  if(S.user?.role!=='Admin'&&S.user?.role!=='Medienscout')return toast('Keine Berechtigung.');
   await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});
   if($('#c-assign'))$('#c-assign').textContent='Betreuer: '+S.user.name;
   if($('#c-st'))$('#c-st').innerHTML=badge('In Bearbeitung');
@@ -815,20 +826,32 @@ window.runSlashCommand=async(ticketId,input)=>{
   if(!S.settings.slashCommandsEnabled)return toast('Slash-Befehle sind deaktiviert.');
   const raw=input.trim().split(/\s+/)[0],name=raw.slice(1).toLowerCase();
   const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.name===name&&x.active);if(!cmd)return toast('Unbekannter oder deaktivierter Befehl: '+raw);
+  if(name==='passwort'&&S.user?.role!=='Admin')return toast('Der Passwort-Befehl ist ausschließlich Admins vorbehalten.');
   if(!(cmd.roles||['Admin','Medienscout']).includes(S.user.role))return toast('Du darfst diesen Befehl nicht verwenden.');
   if(name==='passwort'&&!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
   const ticket=await DB.get('tickets',ticketId);if(!ticket)return toast('Ticket nicht gefunden.');
+  if(name==='passwort'&&(!ticket.passwordReset||S.user?.role!=='Admin'))return toast('Der Passwort-Befehl kann nur von Admins in Passwort-Tickets genutzt werden.');
   modal(`<div class="space-y-3"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}</p>
-    ${cmd.requiresPassword?'<label class="block text-xs">Neues Passwort (wird nicht in Chat/Firebase gespeichert)<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
+    ${cmd.requiresPassword?'<label class="block text-xs">Neuer Benutzername (optional)<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
     <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(cmd.message||'')}</div>${cmd.image?'<img src="'+esc(cmd.image)+'" class="rounded-xl max-h-48 object-contain">':''}
-    ${cmd.requiresPassword?'<p class="text-xs text-amber-600 dark:text-amber-400">Das Passwort wird nicht in Chat oder Firebase gespeichert. Nach dem Senden liegt es in deiner Zwischenablage und kann dem Schüler über euren vereinbarten geschützten Weg mitgeteilt werden.</p>':''}
-    <div class="flex gap-2"><button class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button class="btn flex-1" onclick="submitSlashCommand('${ticketId}','${esc(cmd.id)}')">${cmd.requiresPassword?'Passwort kopieren & Nachricht senden':'Nachricht senden'}</button></div></div>`);
+    ${cmd.requiresPassword?'<p class="text-xs text-amber-600 dark:text-amber-400">Die Zugangsdaten erscheinen als private Passwortkarte im Ticket. Nur der betroffene Schüler und Admins dürfen sie sehen.</p>':''}
+    <div class="flex gap-2"><button class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button class="btn flex-1" onclick="submitSlashCommand('${ticketId}','${esc(cmd.id)}')">${cmd.requiresPassword?'Passwort sicher senden':'Nachricht senden'}</button></div></div>`);
 };
 window.submitSlashCommand=async(ticketId,cmdId)=>{
   const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.id===cmdId);if(!cmd)return toast('Befehl nicht gefunden.');
-  if(cmd.requiresPassword){const secret=$('#sc-secret')?.value||'';if(!secret)return toast('Bitte das neue Passwort eingeben.');try{await navigator.clipboard.writeText(secret)}catch(e){return toast('Kopieren nicht möglich. Bitte Browser-Berechtigung prüfen.')}$('#sc-secret').value='';}
-  const now=Date.now();await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+' (Scout)',text:cmd.message||'',img:cmd.image||null,internal:false,ts:now});
-  await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'});closeModal();toast(cmd.requiresPassword?'Nachricht gesendet. Passwort liegt nur in deiner Zwischenablage.':'Nachricht gesendet.');
+  const ticket=await DB.get('tickets',ticketId);if(!ticket)return toast('Ticket nicht gefunden.');
+  const now=Date.now();
+  if(cmd.requiresPassword){
+    if(S.user?.role!=='Admin'||!ticket.passwordReset)return toast('Nur Admins dürfen Zugangsdaten in Passwort-Tickets versenden.');
+    const secret=$('#sc-secret')?.value||'',username=$('#sc-username')?.value.trim()||'';
+    if(!secret)return toast('Bitte das neue Passwort eingeben.');
+    await DB.passwordSet(ticketId,{ticketId,uid:ticket.uid,platform:ticket.passwordPlatform||'',username,password:secret,createdAt:now,expiresAt:Timestamp.fromDate(new Date(now+3*24*60*60*1000))});
+    await DB.addMsg(ticketId,{from:'admin',senderName:S.user.name+' (Admin)',senderRole:'Admin',text:cmd.message||'Dein Passwort wurde zurückgesetzt. Bitte beachte die folgende Anleitung.',img:cmd.image||null,internal:false,ts:now,passwordCard:true});
+    await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'Gelöst',resolvedAt:now});
+    closeModal();toast('Zugangsdaten und Anleitung wurden gesendet. Ticket gelöst.');return;
+  }
+  await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+' (Scout)',senderRole:S.user.role,text:cmd.message||'',img:cmd.image||null,internal:false,ts:now});
+  await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'});closeModal();toast('Nachricht gesendet.');
 };
 
 window.sendApp=async()=>{
@@ -902,7 +925,8 @@ const TABS=[
 ];
 
 function adminView(){
-  const nNew=S.tickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
+  const visibleTickets=S.user?.role==='Admin'?S.tickets:S.tickets.filter(t=>!t.passwordReset);
+  const nNew=visibleTickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
   return `<div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -1075,7 +1099,7 @@ const adminTabs={
     <div class="flex items-center justify-between">
       <p class="text-xs opacity-70">Klicke auf ein Ticket für den Vollbild-Chat oder übernimm es direkt.</p>
     </div>
-    ${S.tickets.map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
+    ${visibleTickets.map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
       <button onclick="openChat('${t.id}',true)" class="flex-1 text-left flex items-center gap-3 cursor-pointer min-w-[240px]">
         ${t.unreadAdmin?`<span class="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" title="Neue Nachricht"></span>`:''}
         <div>
