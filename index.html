@@ -115,7 +115,7 @@ onAuthStateChanged(auth,async u=>{
   S.unsubs.push(DB.watchMy('applications',u.uid,d=>{S.myApps=d;render()}));
 
   S.unsubs.push(DB.watch('users',d=>{S.users=d;render()}));
-  S.unsubs.push(DB.watch('privateMessages',d=>{S.privateMessages=d.filter(m=>m.fromUid===u.uid||m.toUid===u.uid);render()},'createdAt'));
+  S.unsubs.push(DB.watch('privateMessages',d=>{S.privateMessages=d.filter(m=>p.role==='Admin'||m.fromUid===u.uid||m.toUid===u.uid);render()},'createdAt'));
   S.unsubs.push(DB.watch('helpArticles',d=>{S.helpArticles=d;render()},'createdAt'));
 
   if(['Admin','Medienscout'].includes(p.role)){
