@@ -51,6 +51,7 @@ const DB={
 const S={
   settings:{
     tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,profileExtras:true,feedback:true,personalization:true,mediaLibrary:true,mediaFavorites:true,mediaProgress:true,mediaNewBadge:true,mediaRelated:true,
+    activityOverview:true,privateMessages:true,helpCenter:true,privateMessagingPolicy:'all',
     slashCommandsEnabled:true,passwordSupport:true,
     slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
@@ -144,9 +145,9 @@ function render(){
   else if(S.view=='tickets'&&S.user)content=studentTicketsView();
   else if(S.view=='apply'&&S.user)content=studentApplyView();
   else if(S.view=='surveys')content=surveysView();
-  else if(S.view=='activity')content=activityOverviewView();
-  else if(S.view=='privateMessages'&&S.user)content=privateMessagesView();
-  else if(S.view=='help')content=helpCenterView();
+  else if(S.view=='activity'&&S.settings.activityOverview!==false)content=activityOverviewView();
+  else if(S.view=='privateMessages'&&S.user&&S.settings.privateMessages!==false)content=privateMessagesView();
+  else if(S.view=='help'&&S.settings.helpCenter!==false)content=helpCenterView();
   else if(S.view=='article')content=articlePageView();
   else if(S.view=='videos'||S.view=='articles')content=mediaLibraryView(S.view);
   else content=homeView();
@@ -494,8 +495,8 @@ const canSendPrivateMessage=(from,to)=>{const p=S.settings.privateMessagingPolic
 window.setPrivateMessagingPolicy=async p=>{if(!isStaff()||S.user.role!=='Admin')return toast('Nur Admins dürfen das ändern.');await DB.set('settings','main',{...S.settings,setupDone:true,privateMessagingPolicy:p});toast('Nachrichtenberechtigung gespeichert.');};
 window.sendPrivateMessage=async()=>{if(!S.user)return;const to=S.users.find(u=>u.id===val('pm-to')),message=val('pm-text');if(!to||!message)return toast('Bitte Empfänger und Nachricht angeben.');if(!canSendPrivateMessage(S.user,to))return toast('Du darfst dieser Person keine private Nachricht schreiben.');await DB.add('privateMessages',{fromUid:S.user.uid,fromName:S.user.name,fromRole:S.user.role||'Schüler',toUid:to.id,toName:to.name,text:message,read:false,createdAt:Date.now()});toast('Nachricht gesendet.');render();};
 window.markPrivateRead=async id=>{const m=S.privateMessages.find(x=>x.id===id);if(m&&m.toUid===S.user.uid)await DB.upd('privateMessages',id,{read:true});};
-window.saveHelpArticle=async()=>{if(S.user?.role!=='Admin')return toast('Nur Admins dürfen Hilfethemen veröffentlichen.');const title=val('help-title'),body=val('help-body');if(!title||!body)return toast('Bitte Titel und Inhalt ausfüllen.');await DB.add('helpArticles',{title,body,createdAt:Date.now()});toast('Hilfethema veröffentlicht.');render();};
-window.deleteHelpArticle=async id=>{if(S.user?.role!=='Admin')return toast('Nur Admins dürfen Hilfethemen löschen.');if(confirm('Hilfethema löschen?'))await DB.del('helpArticles',id);};
+window.saveHelpArticle=async()=>{if(!isStaff())return toast('Nur Medienscouts und Admins dürfen Hilfethemen veröffentlichen.');const title=val('help-title'),body=val('help-body');if(!title||!body)return toast('Bitte Titel und Inhalt ausfüllen.');await DB.add('helpArticles',{title,body,createdAt:Date.now()});toast('Hilfethema veröffentlicht.');render();};
+window.deleteHelpArticle=async id=>{if(!isStaff())return toast('Nur Medienscouts und Admins dürfen Hilfethemen löschen.');if(confirm('Hilfethema löschen?'))await DB.del('helpArticles',id);};
 
 // ---------- Schüler-Ansicht: Bewerbung ----------
 function studentApplyView(){
@@ -534,8 +535,14 @@ window.goProtected=target=>{
   S.view=target;render();
 };
 
-const modal=h=>{$('#modal').innerHTML=`<div class="fixed inset-0 z-[110] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 w-full max-w-xl max-h-[90vh] overflow-auto p-6 relative">${h}</div></div>`;icons()};
-window.closeModal=()=>{S.open=null;$('#modal').innerHTML=''};
+const modal=h=>{
+  const chatHost=$('#chat-fullscreen')?.querySelector('#c-list')?$('#chat-fullscreen'):null;
+  const host=chatHost||$('#modal');
+  host.querySelector('#app-modal-layer')?.remove();
+  host.insertAdjacentHTML('beforeend',`<div id="app-modal-layer" class="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 w-full max-w-xl max-h-[90vh] overflow-auto p-6 relative">${h}</div></div>`);
+  icons();
+};
+window.closeModal=()=>{S.open=null;$('#modal')?.querySelector('#app-modal-layer')?.remove();$('#chat-fullscreen')?.querySelector('#app-modal-layer')?.remove()};
 
 window.openAuth=(mode='login')=>{
   S.authMode=mode;S.open='login';
@@ -814,7 +821,7 @@ window.runSlashCommand=async(ticketId,input)=>{
   modal(`<div class="space-y-3"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}</p>
     ${cmd.requiresPassword?'<label class="block text-xs">Neues Passwort (wird nicht in Chat/Firebase gespeichert)<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
     <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(cmd.message||'')}</div>${cmd.image?'<img src="'+esc(cmd.image)+'" class="rounded-xl max-h-48 object-contain">':''}
-    ${cmd.requiresPassword?'<p class="text-xs text-amber-600 dark:text-amber-400">Das Passwort wird nur lokal kopiert. Die Nachricht informiert den Schüler, dass es separat über einen geschützten Weg mitgeteilt wird.</p>':''}
+    ${cmd.requiresPassword?'<p class="text-xs text-amber-600 dark:text-amber-400">Das Passwort wird nicht in Chat oder Firebase gespeichert. Nach dem Senden liegt es in deiner Zwischenablage und kann dem Schüler über euren vereinbarten geschützten Weg mitgeteilt werden.</p>':''}
     <div class="flex gap-2"><button class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button class="btn flex-1" onclick="submitSlashCommand('${ticketId}','${esc(cmd.id)}')">${cmd.requiresPassword?'Passwort kopieren & Nachricht senden':'Nachricht senden'}</button></div></div>`);
 };
 window.submitSlashCommand=async(ticketId,cmdId)=>{
@@ -955,7 +962,7 @@ const adminTabs={
       ${toggleRow('activityOverview','Aktivitätsübersicht','Neuigkeiten und veröffentlichte Portal-Aktivitäten anzeigen')}
       ${toggleRow('privateMessages','Private Nachrichten','Direkte Nachrichten zwischen registrierten Nutzern')}
       ${toggleRow('helpCenter','Hilfe-Center','Hilfethemen und Antworten zentral bereitstellen')}
-      <section class="glass p-4 space-y-2"><h4 class="font-bold text-sm">Wer darf wem private Nachrichten schreiben?</h4><select class="inp" onchange="setPrivateMessagingPolicy(this.value)"><option value="all" ${S.settings.privateMessagingPolicy==='all'?'selected':''}>Alle dürfen allen schreiben</option><option value="staff" ${S.settings.privateMessagingPolicy==='staff'?'selected':''}>Schüler dürfen nur Medienscouts und Admins schreiben</option><option value="moderated" ${S.settings.privateMessagingPolicy==='moderated'?'selected':''}>Alle dürfen allen schreiben – Admins moderieren</option></select></section>
+      <section class="glass p-4 space-y-2"><h4 class="font-bold text-sm">Wer darf wem private Nachrichten schreiben?</h4><select class="inp" onchange="setPrivateMessagingPolicy(this.value)"><option value="all" ${S.settings.privateMessagingPolicy==='all'?'selected':''}>Alle dürfen allen schreiben</option><option value="staff" ${S.settings.privateMessagingPolicy==='staff'?'selected':''}>Schüler dürfen nur Medienscouts und Admins schreiben</option></select></section>
     </div>
 
     <div class="space-y-4">
