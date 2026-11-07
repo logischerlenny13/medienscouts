@@ -58,10 +58,10 @@ const S={
     slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
-  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],feedbackItems:[],helpArticles:[],privateMessages:[],
+  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],pubUsers:[],feedbackItems:[],helpArticles:[],privateMessages:[],
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
   adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,pageViews:0,
-  chatNoteMode:false,surveyBuilderQs:[],surveyResults:[],activeResultSurvey:null,unsubs:[]
+  chatNoteMode:false,surveyBuilderQs:[],svDraft:null,surveyResults:[],activeResultSurvey:null,unsubs:[],unsubSurveyResp:null
 };
 let lastCountedView=null;
 
@@ -72,7 +72,7 @@ const val=id=>$('#'+id)?.value.trim()||'';
 const fmt=ts=>ts?new Date(ts).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'}):'-';
 const ytId=u=>{const m=String(u||'').match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/);return m?m[1]:/^[\w-]{11}$/.test(u)?u:null};
 const CATS=['Cybermobbing','Datenschutz','Passwörter & Sicherheit','Passwort zurücksetzen','Social Media','Schul-IT & Accounts','Sonstiges'];
-const passwordPlatforms=()=>S.settings.passwordPlatforms||['Minecraft','Roblox','Instagram','TikTok','Sonstige'];
+const passwordPlatforms=()=>S.settings.passwordPlatforms||['Untis','Schulportal','Minecraft','Roblox','Sonstige'];
 const CLASSES=['Alle','Klasse 5','Klasse 6','Klasse 7','Klasse 8','Klasse 9','Klasse 10','EF / Oberstufe'];
 
 const compress=(f,max=1000,q=0.75)=>new Promise((res,rej)=>{
@@ -90,6 +90,11 @@ const fmtArticle=t=>String(t||'').split(/\n\s*\n/).map(b=>{
 
 const isStaff=()=>S.user&&['Admin','Medienscout'].includes(S.user.role);
 const sortPinned=arr=>[...arr].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||(b.createdAt||0)-(a.createdAt||0));
+
+// Support-Desk: nur ungelöste Tickets, die unbeansprucht oder von mir beansprucht sind; Passwort-Tickets nur für Admins
+const deskTickets=()=>S.tickets.filter(t=>t.status!=='Gelöst'&&(S.user.role==='Admin'||!t.passwordReset)&&(!t.assignedUid||t.assignedUid===S.user.uid));
+// Beansprucht-Bereich (nur Admins): ungelöste Tickets, die jemand anderes beansprucht hat
+const claimedTickets=()=>S.tickets.filter(t=>t.status!=='Gelöst'&&t.assignedUid&&t.assignedUid!==S.user.uid);
 
 // ---------- Live-Abos ----------
 onSnapshot(doc(db,'settings','main'),s=>{
@@ -119,7 +124,7 @@ onAuthStateChanged(auth,async u=>{
   S.unsubs.push(DB.watchMy('applications',u.uid,d=>{S.myApps=d;render()}));
 
   S.unsubs.push(DB.watchPrivate(u.uid,d=>{S.privateMessages=d;render()}));
-  S.unsubs.push(DB.watch('publicUsers',d=>{S.users=d;render()}));
+  S.unsubs.push(DB.watch('publicUsers',d=>{S.pubUsers=d;render()}));
   await DB.set('publicUsers',u.uid,{name:S.user.name,role:S.user.role||'Schüler',klass:S.user.klass||''});
   S.unsubs.push(DB.watch('helpArticles',d=>{S.helpArticles=d;render()},'createdAt'));
 
@@ -143,11 +148,13 @@ function applyDesign(){
 function render(){
   const ae=document.activeElement;
   if(ae&&ae.tagName!='BODY'&&ae.closest('#app')&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)&&!ae.id.startsWith('s-'))return;
+  const fid=ae&&ae.id&&ae.id.startsWith('s-')&&ae.closest('#app')?ae.id:null,pos=fid?ae.selectionStart:0;
   let content='';
   if(S.view=='admin'&&isStaff())content=adminView();
   else if(S.view=='profile'&&S.user)content=profileView();
   else if(S.view=='tickets'&&S.user)content=studentTicketsView();
   else if(S.view=='apply'&&S.user)content=studentApplyView();
+  else if(S.view=='pwreset'&&S.user)content=pwResetView();
   else if(S.view=='surveys')content=surveysView();
   else if(S.view=='activity'&&S.settings.activityOverview!==false)content=activityOverviewView();
   else if(S.view=='privateMessages'&&S.user&&S.settings.privateMessages!==false)content=privateMessagesView();
@@ -159,6 +166,7 @@ function render(){
   $('#app').innerHTML=nav()+`<main class="max-w-5xl w-full mx-auto px-4 py-8 flex-1">${content}</main>`+footer();
   if(S.user&&lastCountedView!==S.view){lastCountedView=S.view;DB.add('pageViews',{ts:Date.now()}).catch(e=>console.warn('Seitenaufruf konnte nicht gezählt werden',e));}
   icons();
+  if(fid){const e=$('#'+fid);if(e){e.focus();try{e.setSelectionRange(pos,pos)}catch(_){}}}
 }
 
 const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 border-t-0">
@@ -176,6 +184,7 @@ const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 b
       ${S.settings.activityOverview?`<button class="btn2 ${S.view=='activity'?'!bg-blue-600 !text-white':''}" onclick="S.view='activity';render()"><i data-lucide="activity" class="w-4 h-4"></i><span class="hidden md:inline">Aktivität</span></button>`:''}
       ${S.settings.privateMessages&&S.user?`<button class="btn2 ${S.view=='privateMessages'?'!bg-blue-600 !text-white':''}" onclick="S.view='privateMessages';render()"><i data-lucide="mail" class="w-4 h-4"></i><span class="hidden md:inline">Nachrichten</span>${S.privateMessages.filter(m=>m.toUid===S.user.uid&&!m.read).length?'<span class="w-2 h-2 rounded-full bg-rose-500"></span>':''}</button>`:''}
       ${S.settings.helpCenter?`<button class="btn2 ${S.view=='help'?'!bg-blue-600 !text-white':''}" onclick="S.view='help';render()"><i data-lucide="life-buoy" class="w-4 h-4"></i><span class="hidden md:inline">Hilfe-Center</span></button>`:''}
+      ${S.settings.passwordSupport?`<button class="btn2 ${S.view=='pwreset'?'!bg-blue-600 !text-white':''}" onclick="goProtected('pwreset')"><i data-lucide="key-round" class="w-4 h-4"></i><span class="hidden md:inline">Passwort zurücksetzen</span></button>`:''}
       ${S.settings.surveys?`<button class="btn2 ${S.view=='surveys'?'!bg-blue-600 !text-white':''}" onclick="S.view='surveys';S.activeSurveyId=null;render()"><i data-lucide="clipboard-list" class="w-4 h-4"></i><span class="hidden md:inline">Umfragen</span></button>`:''}
       ${S.settings.tickets?`<button class="btn2 ${S.view=='tickets'?'!bg-blue-600 !text-white':''}" onclick="goProtected('tickets')"><i data-lucide="message-square-text" class="w-4 h-4"></i><span class="hidden sm:inline">Tickets</span>${S.myTickets.some(t=>t.unreadStudent)?`<span class="w-2 h-2 rounded-full bg-rose-500"></span>`:''}</button>`:''}
       ${S.settings.apps?`<button class="btn2 ${S.view=='apply'?'!bg-blue-600 !text-white':''}" onclick="goProtected('apply')"><i data-lucide="user-plus" class="w-4 h-4"></i><span class="hidden lg:inline">Bewerbung</span></button>`:''}
@@ -188,7 +197,7 @@ const nav=()=>`<header class="sticky top-0 z-40 glass !rounded-none border-x-0 b
 
 const footer=()=>`<footer class="text-center text-xs opacity-60 py-6 border-t border-slate-200/60 dark:border-slate-800/60 mt-12">${esc(S.settings.schoolName)} · Schulportal & Medienscouts</footer>`;
 
-// ---------- Startseite (Schulportal, Schwarzes Brett, Artikel & Videos getrennt, Aktions-Boxen) ----------
+// ---------- Startseite ----------
 function isFreshMedia(x){return !!x.createdAt&&Date.now()-x.createdAt<7*24*60*60*1000}
 function mediaState(kind){const p=S.user?.mediaState||{};return {seen:p[kind+'Seen']||[],favorites:p[kind+'Favorites']||[]}}
 function mediaIsSeen(kind,id){return mediaState(kind).seen.includes(id)}
@@ -245,7 +254,7 @@ function homeView(){
   const allArts=S.articles.filter(a=>a.published!==false),allVids=S.videos.filter(v=>v.published!==false);
   const searching=!!S.q.trim()||S.cat!=='Alle';
   const arts=sortPinned((searching?allArts:allArts.filter(a=>a.pinned)).filter(a=>(S.cat==='Alle'||a.cat===S.cat)&&(a.title+' '+a.body).toLowerCase().includes(S.q.toLowerCase()))).slice(0,searching?50:4);
-  const vids=sortPinned((searching?allVids:allVids.filter(v=>v.pinned)).filter(v=>(S.cat==='Alle'||(v.cat||'Sonstiges')===S.cat)&&(v.title+' '+v.desc).toLowerCase().includes(S.q.toLowerCase()))).slice(0,searching?50:4);
+  const vids=sortPinned((searching?allVids:allVids.filter(v=>v.pinned)).filter(v=>(S.cat==='Alle'||(v.cat||'Sonstiges')===S.cat)&&((v.title||'')+' '+(v.desc||'')).toLowerCase().includes(S.q.toLowerCase()))).slice(0,searching?50:4);
   if(S.settings.mediaLibrary===false)return '<div class="glass p-8 text-center"><h1 class="text-xl font-bold">Artikel und Videos sind gerade nicht verfügbar.</h1><p class="text-sm opacity-70 mt-2">Bitte versuche es später erneut.</p></div>';
   return `<div class="space-y-8">
     <section class="glass p-6 sm:p-8 space-y-2"><div class="text-xs font-semibold uppercase tracking-wider text-blue-600">Informationen & Selbsthilfe</div><h1 class="text-2xl sm:text-3xl font-bold">${esc(S.settings.schoolName)}</h1><p class="text-sm opacity-75">${esc(S.settings.subTitle)}</p><div class="flex flex-wrap gap-2 pt-2">${S.settings.tickets?`<button class="btn" onclick="goProtected('tickets')"><i data-lucide="message-square-plus" class="w-4 h-4"></i>Hilfe-Ticket öffnen</button>`:''}${S.settings.surveys&&S.surveys.some(s=>s.active!==false)?`<button class="btn2" onclick="S.view='surveys';render()">Aktuelle Umfragen</button>`:''}</div></section>
@@ -264,11 +273,11 @@ function mediaLibraryView(kind){
   if(S.settings.mediaLibrary===false)return '<div class="glass p-8 text-center">Dieser Bereich ist aktuell deaktiviert.</div>';
   const isVideo=kind==='videos',all=isVideo?S.videos:S.articles;
   const q=S.q.toLowerCase();
-  const list=sortPinned(all.filter(x=>x.published!==false&&(S.cat==='Alle'||x.cat===S.cat)&&(String(x.title||'')+' '+String(isVideo?x.desc:x.body||'')).toLowerCase().includes(q)));
+  const list=sortPinned(all.filter(x=>x.published!==false&&(S.cat==='Alle'||x.cat===S.cat)&&(String(x.title||'')+' '+String(isVideo?x.desc||'':x.body||'')).toLowerCase().includes(q)));
   return `<div class="space-y-5"><button class="btn2" onclick="S.view='home';S.q='';S.cat='Alle';render()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Startseite</button><div><h1 class="text-2xl font-bold">${isVideo?'Alle Videos':'Alle Artikel'}</h1><p class="text-sm opacity-70 mt-1">${list.length} Inhalte</p></div><div class="flex flex-col sm:flex-row gap-3"><input id="s-q" class="inp" placeholder="${isVideo?'Videos':'Artikel'} suchen …" value="${esc(S.q)}" oninput="S.q=this.value;render()"><select class="inp sm:max-w-xs" onchange="S.cat=this.value;render()">${['Alle',...CATS].map(c=>'<option '+(S.cat===c?'selected':'')+'>'+c+'</option>').join('')}</select></div><div class="grid ${isVideo?'sm:grid-cols-2 lg:grid-cols-3':'md:grid-cols-2'} gap-3">${list.map(x=>mediaCard(kind,x)).join('')||'<div class="glass p-8 text-center opacity-60">Keine Inhalte gefunden.</div>'}</div></div>`;
 }
 
-// ---------- Echte Artikel-Leseansicht (statt Popup) + aktivierbares Feedback (Nr. 7) ----------
+// ---------- Artikel-Leseansicht ----------
 window.openArtPage=id=>{S.activeArtId=id;S.view='article';markMediaSeen('articles',id);window.scrollTo(0,0);render()};
 
 function articlePageView(){
@@ -293,7 +302,6 @@ function articlePageView(){
 
       <div class="prose max-w-none">${fmtArticle(a.body)}</div>
 
-      <!-- Nr. 7: Aktivierbares Artikel-Feedback -->
       ${S.settings.artFeedback?`<div id="art-fb-box" class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-500/5 p-4 rounded-xl">
         <div>
           <div class="font-bold text-sm">Hat dir diese Anleitung weitergeholfen?</div>
@@ -311,7 +319,7 @@ function articlePageView(){
       <div class="grid sm:grid-cols-2 gap-4">
         ${related.map(r=>`<button onclick="openArtPage('${r.id}')" class="glass p-4 text-left hover:border-blue-500/50 transition">
           <div class="font-bold text-sm">${esc(r.title)}</div>
-          <div class="text-xs opacity-70 mt-1 line-clamp-2">${esc(r.body.replace(/## /g,'').slice(0,100))}…</div>
+          <div class="text-xs opacity-70 mt-1 line-clamp-2">${esc(String(r.body||'').replace(/## /g,'').slice(0,100))}…</div>
         </button>`).join('')}
       </div>
     </div>`:''}
@@ -334,7 +342,7 @@ window.voteArt=async(id,up)=>{
   icons();
 };
 
-// ---------- Umfragen-Ansicht für Schüler (Anonym & Nicht-Anonym + Klassen-Verzweigung) ----------
+// ---------- Umfragen-Ansicht für Schüler ----------
 function surveysView(){
   const activeList=S.surveys.filter(s=>s.active!==false);
   if(S.activeSurveyId){
@@ -355,7 +363,7 @@ function surveysView(){
       <button class="btn2" onclick="S.activeSurveyId=null;render()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Zurück zu allen Umfragen</button>
       <div class="glass p-6 sm:p-8 space-y-5">
         <div>
-          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${sv.anonymous?'bg-emerald-500/15 text-emerald-500':'bg-blue-500/15 text-blue-500'}">${sv.anonymous?'Anonyme Umfrage (kein Name wird gespeichert)':'Teilnahme mit deinem Schul-Account ('+esc(S.user.name)+')'}</span>
+          <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full ${sv.anonymous?'bg-emerald-500/15 text-emerald-500':'bg-blue-500/15 text-blue-500'}">${sv.anonymous?'Anonyme Umfrage (kein Name wird gespeichert)':'Teilnahme mit deinem Schul-Account ('+esc(S.user?.name||'')+')'}</span>
           <h1 class="text-2xl font-bold mt-2">${esc(sv.title)}</h1>
           <p class="text-sm opacity-75 mt-1">${esc(sv.desc||'')}</p>
         </div>
@@ -416,14 +424,16 @@ window.submitSurvey=async sid=>{
       answers[q.id]=val(`svq_txt_${q.id}`);
     }
   }
-  await DB.addSurveyResp(sid,{
-    klass:selClass,
-    uid:sv.anonymous?null:(S.user?.uid||null),
-    userName:sv.anonymous?'Anonym':(S.user?.name||'Schüler'),
-    userEmail:sv.anonymous?'-':(S.user?.email||'-'),
-    answers,
-    ts:Date.now()
-  });
+  try{
+    await DB.addSurveyResp(sid,{
+      klass:selClass,
+      uid:sv.anonymous?null:(S.user?.uid||null),
+      userName:sv.anonymous?'Anonym':(S.user?.name||'Schüler'),
+      userEmail:sv.anonymous?'-':(S.user?.email||'-'),
+      answers,
+      ts:Date.now()
+    });
+  }catch(e){return toast('Fehler beim Absenden: '+(e.code||e.message))}
   S.activeSurveyId=null;
   toast('Vielen Dank für deine Teilnahme!');
   render();
@@ -448,12 +458,7 @@ function studentTicketsView(){
         <h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-blue-500"></i>Neues Ticket starten</h2>
         <div>
           <label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label>
-          <select id="t-cat" class="inp" onchange="togglePasswordPlatform()">${CATS.filter(c=>c!=='Passwort zurücksetzen'||S.settings.passwordSupport).map(c=>`<option>${c}</option>`).join('')}</select>
-        </div>
-        <div id="t-platform-wrap" class="hidden">
-          <label class="text-xs opacity-70 block mb-1">Welche Plattform?</label>
-          <select id="t-platform" class="inp">${passwordPlatforms().map(p=>`<option>${esc(p)}</option>`).join('')}</select>
-          <p class="text-xs opacity-60 mt-1">Du musst keinen Betreff und keine zusätzliche Nachricht schreiben. Das Team kümmert sich um die Zurücksetzung.</p>
+          <select id="t-cat" class="inp">${CATS.filter(c=>c!=='Passwort zurücksetzen').map(c=>`<option>${c}</option>`).join('')}</select>
         </div>
         <div id="t-standard-fields">
           <div>
@@ -465,6 +470,7 @@ function studentTicketsView(){
             <textarea id="t-msg" rows="4" class="inp" placeholder="Beschreibe kurz dein Anliegen…"></textarea>
           </div>
         </div>
+        <p class="text-xs opacity-60">Passwort vergessen? Nutze oben den Button „Passwort zurücksetzen“.</p>
         <div id="t-prev"></div>
         <div class="flex items-center justify-between pt-1">
           <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Screenshot<input type="file" accept="image/*" hidden onchange="pick(this,'t-prev')"></label>
@@ -492,14 +498,32 @@ function studentTicketsView(){
   </div>`;
 }
 
+// ---------- Passwort zurücksetzen (Schüler) ----------
+function pwResetView(){
+  if(!S.settings.passwordSupport)return `<div class="glass p-6 text-amber-500">Der Passwort-Support ist momentan deaktiviert.</div>`;
+  return `<div class="max-w-2xl mx-auto space-y-5">
+    <div class="flex items-center justify-between"><h1 class="text-2xl font-bold">Passwort zurücksetzen</h1><button class="btn2" onclick="S.view='home';render()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Zurück</button></div>
+    <p class="text-sm opacity-70">Wähle die App aus, für die du ein neues Passwort brauchst. Ein Admin kümmert sich darum.</p>
+    <textarea id="pw-note" rows="2" class="inp" placeholder="Optional: Anmerkung für das Team"></textarea>
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${passwordPlatforms().map(p=>`<button class="glass p-5 font-semibold hover:border-blue-500/50 transition cursor-pointer" data-p="${esc(p)}" onclick="createPwTicket(this.dataset.p)">${esc(p)}</button>`).join('')}</div>
+  </div>`;
+}
+window.createPwTicket=async p=>{
+  if(!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
+  if(!confirm('Passwort für '+p+' zurücksetzen lassen?'))return;
+  const now=Date.now(),note=val('pw-note');
+  const ref=await DB.add('tickets',{uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,subject:'Passwort zurücksetzen: '+p,category:'Passwort zurücksetzen',status:'Neu',assignedUid:null,assignedName:null,passwordReset:true,passwordPlatform:p,createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false});
+  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,senderRole:'User',text:'Bitte das Passwort für '+p+' zurücksetzen.'+(note?'\n'+note:''),img:null,internal:false,ts:now});
+  toast('Ticket erstellt.');S.view='tickets';render();openChat(ref.id,false);
+};
 
 function activityOverviewView(){const news=[...S.articles.map(a=>({title:a.title||'Artikel',detail:'Neuer Artikel',ts:a.createdAt})),...S.videos.map(v=>({title:v.title||'Video',detail:'Neues Video',ts:v.createdAt})),...S.boardItems.map(x=>({title:x.title||'Neuigkeit',detail:'Schwarzes Brett',ts:x.createdAt}))].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,40);return `<div class="space-y-5"><h1 class="text-2xl font-bold">Aktivitätsübersicht</h1><p class="text-sm opacity-70">Neuigkeiten und wichtige Veröffentlichungen.</p>${news.map(n=>`<article class="glass p-4"><div class="flex justify-between gap-3"><b>${esc(n.title)}</b><span class="text-xs opacity-50">${fmt(n.ts)}</span></div><div class="text-sm opacity-70 mt-1">${esc(n.detail)}</div></article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine Neuigkeiten vorhanden.</div>'}</div>`;}
-function privateMessagesView(){const contacts=S.users.filter(u=>u.id!==S.user.uid&&canSendPrivateMessage(S.user,u));const msgs=S.privateMessages.slice();return `<div class="space-y-5"><h1 class="text-2xl font-bold">Private Nachrichten</h1><section class="glass p-5 space-y-3"><h2 class="font-bold">Neue Nachricht</h2><select id="pm-to" class="inp"><option value="">Empfänger auswählen</option>${contacts.map(u=>`<option value="${u.id}">${esc(u.name)} · ${esc(u.role||'Schüler')}</option>`).join('')}</select><textarea id="pm-text" class="inp" rows="3" placeholder="Nachricht schreiben…"></textarea><button class="btn" onclick="sendPrivateMessage()">Senden</button></section><section class="space-y-2"><h2 class="font-bold">Unterhaltungen</h2>${msgs.map(m=>`<article class="glass p-4"><div class="flex justify-between gap-2 text-xs opacity-60"><b>${m.fromUid===S.user.uid?'An: '+esc(m.toName):'Von: '+esc(m.fromName)}</b><span>${fmt(m.createdAt)}</span></div><p class="mt-2 text-sm whitespace-pre-wrap">${esc(m.text)}</p>${m.toUid===S.user.uid&&!m.read?`<button class="btn2 mt-2" onclick="markPrivateRead('${m.id}')">Als gelesen markieren</button>`:''}</article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine privaten Nachrichten.</div>'}</section></div>`;}
+function privateMessagesView(){const contacts=S.pubUsers.filter(u=>u.id!==S.user.uid&&canSendPrivateMessage(S.user,u));const msgs=S.privateMessages.slice();return `<div class="space-y-5"><h1 class="text-2xl font-bold">Private Nachrichten</h1><section class="glass p-5 space-y-3"><h2 class="font-bold">Neue Nachricht</h2><select id="pm-to" class="inp"><option value="">Empfänger auswählen</option>${contacts.map(u=>`<option value="${u.id}">${esc(u.name)} · ${esc(u.role||'Schüler')}</option>`).join('')}</select><textarea id="pm-text" class="inp" rows="3" placeholder="Nachricht schreiben…"></textarea><button class="btn" onclick="sendPrivateMessage()">Senden</button></section><section class="space-y-2"><h2 class="font-bold">Unterhaltungen</h2>${msgs.map(m=>`<article class="glass p-4"><div class="flex justify-between gap-2 text-xs opacity-60"><b>${m.fromUid===S.user.uid?'An: '+esc(m.toName):'Von: '+esc(m.fromName)}</b><span>${fmt(m.createdAt)}</span></div><p class="mt-2 text-sm whitespace-pre-wrap">${esc(m.text)}</p>${m.toUid===S.user.uid&&!m.read?`<button class="btn2 mt-2" onclick="markPrivateRead('${m.id}')">Als gelesen markieren</button>`:''}</article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine privaten Nachrichten.</div>'}</section></div>`;}
 function helpCenterView(){return `<div class="space-y-5"><h1 class="text-2xl font-bold">Hilfe-Center</h1><p class="text-sm opacity-70">Antworten auf häufige Fragen und Unterstützung.</p><div class="grid sm:grid-cols-2 gap-3">${S.helpArticles.map(a=>`<article class="glass p-4"><h2 class="font-bold">${esc(a.title)}</h2><p class="text-sm mt-2 whitespace-pre-wrap">${esc(a.body)}</p></article>`).join('')}</div>${S.helpArticles.length?'':'<div class="glass p-4 opacity-60">Noch keine Hilfethemen veröffentlicht.</div>'}<section class="glass p-5 space-y-2"><h2 class="font-bold">Du brauchst persönliche Hilfe?</h2><button class="btn" onclick="goProtected('tickets')">Support kontaktieren</button></section>${isStaff()?helpAdminEditor():''}</div>`;}
 function helpAdminEditor(){return `<section class="glass p-5 space-y-3"><h2 class="font-bold">Hilfe-Thema hinzufügen</h2><input id="help-title" class="inp" placeholder="Titel"><textarea id="help-body" class="inp" rows="4" placeholder="Erklärung / Antwort"></textarea><button class="btn" onclick="saveHelpArticle()">Veröffentlichen</button>${S.helpArticles.map(a=>`<div class="flex justify-between gap-2 text-sm"><span>${esc(a.title)}</span><button class="btn2 !text-rose-500" onclick="deleteHelpArticle('${a.id}')">Löschen</button></div>`).join('')}</section>`;}
 const canSendPrivateMessage=(from,to)=>{const p=S.settings.privateMessagingPolicy||'all';return !(p==='staff'&&from.role!=='Admin'&&from.role!=='Medienscout'&&to.role!=='Admin'&&to.role!=='Medienscout');};
-window.setPrivateMessagingPolicy=async p=>{if(!isStaff()||S.user.role!=='Admin')return toast('Nur Admins dürfen das ändern.');await DB.set('settings','main',{...S.settings,setupDone:true,privateMessagingPolicy:p});toast('Nachrichtenberechtigung gespeichert.');};
-window.sendPrivateMessage=async()=>{if(!S.user)return;const to=S.users.find(u=>u.id===val('pm-to')),message=val('pm-text');if(!to||!message)return toast('Bitte Empfänger und Nachricht angeben.');if(!canSendPrivateMessage(S.user,to))return toast('Du darfst dieser Person keine private Nachricht schreiben.');await DB.add('privateMessages',{fromUid:S.user.uid,fromName:S.user.name,fromRole:S.user.role||'Schüler',toUid:to.id,toName:to.name,text:message,read:false,createdAt:Date.now()});toast('Nachricht gesendet.');render();};
+window.setPrivateMessagingPolicy=async p=>{if(!S.user||S.user.role!=='Admin')return toast('Nur Admins dürfen das ändern.');await DB.set('settings','main',{...S.settings,setupDone:true,privateMessagingPolicy:p});toast('Nachrichtenberechtigung gespeichert.');};
+window.sendPrivateMessage=async()=>{if(!S.user)return;const to=S.pubUsers.find(u=>u.id===val('pm-to')),message=val('pm-text');if(!to||!message)return toast('Bitte Empfänger und Nachricht angeben.');if(!canSendPrivateMessage(S.user,to))return toast('Du darfst dieser Person keine private Nachricht schreiben.');await DB.add('privateMessages',{fromUid:S.user.uid,fromName:S.user.name,fromRole:S.user.role||'Schüler',toUid:to.id,toName:to.name,text:message,read:false,createdAt:Date.now()});toast('Nachricht gesendet.');render();};
 window.markPrivateRead=async id=>{const m=S.privateMessages.find(x=>x.id===id);if(m&&m.toUid===S.user.uid)await DB.upd('privateMessages',id,{read:true});};
 window.saveHelpArticle=async()=>{if(!isStaff())return toast('Nur Medienscouts und Admins dürfen Hilfethemen veröffentlichen.');const title=val('help-title'),body=val('help-body');if(!title||!body)return toast('Bitte Titel und Inhalt ausfüllen.');await DB.add('helpArticles',{title,body,createdAt:Date.now()});toast('Hilfethema veröffentlicht.');render();};
 window.deleteHelpArticle=async id=>{if(!isStaff())return toast('Nur Medienscouts und Admins dürfen Hilfethemen löschen.');if(confirm('Hilfethema löschen?'))await DB.del('helpArticles',id);};
@@ -535,7 +559,7 @@ function studentApplyView(){
   </div>`;
 }
 
-// ---------- Login, Registrierung & Passwort vergessen (Nr. 1) ----------
+// ---------- Login, Registrierung & Passwort vergessen ----------
 window.goProtected=target=>{
   if(!S.user){S.pendingView=target;openAuth('login');return}
   S.view=target;render();
@@ -619,7 +643,7 @@ window.submitAuth=async()=>{
 };
 window.logout=()=>{closeModal();closeChat();signOut(auth)};
 
-// ---------- VOLLBILD TICKET-CHAT + Zuweisung (Nr. 4) + Interne Flüster-Notizen (Nr. 7 neu) ----------
+// ---------- VOLLBILD TICKET-CHAT ----------
 let pendingImg={},unsubMsg=null;
 window.pick=async(inp,prev,max=900)=>{
   if(!inp.files[0])return;
@@ -629,28 +653,17 @@ window.pick=async(inp,prev,max=900)=>{
 };
 window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[130] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full rounded-lg">`;document.body.appendChild(d)};
 
-window.togglePasswordPlatform=()=>{
-  const isReset=val('t-cat')==='Passwort zurücksetzen';
-  $('#t-platform-wrap')?.classList.toggle('hidden',!isReset);
-  $('#t-standard-fields')?.classList.toggle('hidden',isReset);
-  $('#t-prev')?.classList.toggle('hidden',isReset);
-};
 window.createTicket=async()=>{
-  const cat=val('t-cat'),isReset=cat==='Passwort zurücksetzen';
-  if(isReset&&!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
-  const platform=val('t-platform');
-  const subj=isReset?'Passwort zurücksetzen: '+platform:val('t-subj');
-  const msg=isReset?'Bitte das Passwort für '+platform+' zurücksetzen.':val('t-msg');
-  if(isReset&&!platform)return toast('Bitte eine Plattform auswählen.');
-  if(!isReset&&(!subj||!msg))return toast('Bitte Betreff und Nachricht ausfüllen.');
+  const cat=val('t-cat'),subj=val('t-subj'),msg=val('t-msg');
+  if(!subj||!msg)return toast('Bitte Betreff und Nachricht ausfüllen.');
   const now=Date.now();
   const ref=await DB.add('tickets',{
     uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,
     subject:subj,category:cat,status:'Neu',assignedUid:null,assignedName:null,
-    passwordReset:isReset,passwordPlatform:isReset?platform:null,
+    passwordReset:false,passwordPlatform:null,
     createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false
   });
-  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,senderRole:'User',text:msg,img:isReset?null:(pendingImg['t-prev']||null),internal:false,ts:now});
+  await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,senderRole:'User',text:msg,img:pendingImg['t-prev']||null,internal:false,ts:now});
   pendingImg['t-prev']=null;toast('Ticket erstellt.');openChat(ref.id,false);
 };
 
@@ -660,10 +673,10 @@ window.openStartUserTicketModal=(uid,name,email)=>{
     <div class="space-y-4">
       <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="send" class="w-5 h-5 text-blue-500"></i>Schüler direkt anschreiben</h2>
       <div class="text-xs opacity-75">Empfänger: <b>${esc(name)}</b> (${esc(email)})</div>
-      <div><label class="text-xs opacity-70 block mb-1">Kategorie</label><select id="adm-t-cat" class="inp">${CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div><label class="text-xs opacity-70 block mb-1">Kategorie</label><select id="adm-t-cat" class="inp">${CATS.filter(c=>c!=='Passwort zurücksetzen').map(c=>`<option>${c}</option>`).join('')}</select></div>
       <div><label class="text-xs opacity-70 block mb-1">Betreff</label><input id="adm-t-subj" class="inp" placeholder="Nachricht der Medienscouts"></div>
       <div><label class="text-xs opacity-70 block mb-1">Erste Nachricht</label><textarea id="adm-t-msg" rows="4" class="inp" placeholder="Hallo ${esc(name)}, …"></textarea></div>
-      <button class="btn w-full" onclick="startTicketForStudent('${uid}','${esc(name)}','${esc(email)}')">Ticket-Chat starten</button>
+      <button class="btn w-full" data-uid="${esc(uid)}" data-name="${esc(name)}" data-email="${esc(email)}" onclick="startTicketForStudent(this.dataset.uid,this.dataset.name,this.dataset.email)">Ticket-Chat starten</button>
     </div>`);
 };
 
@@ -686,20 +699,15 @@ window.closeChat=()=>{unsubMsg&&unsubMsg();unsubMsg=null;$('#chat-fullscreen').i
 
 window.openChat=async(id,asAdmin)=>{
   const t=await DB.get('tickets',id).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
-  if(t.passwordReset&&t.status==='Gelöst'&&S.user?.role==='Admin')return toast('Gelöste Passwort-Tickets sind nicht mehr im Web-Adminbereich verfügbar.');
-  if(t.passwordReset&&t.status==='Gelöst'&&S.user?.uid===t.uid){
-    if(!confirm('Dieses Passwort-Ticket ist abgeschlossen. Wenn du fortfährst, wird es als normales Support-Ticket für die Medienscouts sichtbar. Die privaten Zugangsdaten bleiben getrennt und werden nicht im Chat angezeigt. Möchtest du fortfahren?'))return;
-    await DB.upd('tickets',id,{passwordReset:false,status:'Neu',updatedAt:Date.now(),unreadAdmin:true,unreadStudent:false,continuedAfterPassword:true});
-    t.passwordReset=false;t.status='Neu';
-  }
+  if(asAdmin&&!isStaff())return toast('Keine Berechtigung.');
+  if(asAdmin&&S.user.role!=='Admin'&&(t.passwordReset||(t.assignedUid&&t.assignedUid!==S.user.uid)))return toast('Kein Zugriff auf dieses Ticket.');
+  if(asAdmin&&t.status==='Gelöst')return toast('Gelöste Tickets sind nur noch für den Schüler sichtbar.');
+  if(!asAdmin&&t.uid!==S.user?.uid)return toast('Kein Zugriff auf dieses Ticket.');
   pendingImg['c-prev']=null;S.chatNoteMode=false;
-  if(t.passwordReset&&S.user?.role!=='Admin'&&asAdmin)return toast('Passwort-Tickets sind ausschließlich für Admins sichtbar.');
-  if(t.passwordReset&&!asAdmin&&t.uid!==S.user?.uid)return toast('Kein Zugriff auf dieses Ticket.');
   if(asAdmin&&t.unreadAdmin)DB.upd('tickets',id,{unreadAdmin:false});
   if(!asAdmin&&t.unreadStudent)DB.upd('tickets',id,{unreadStudent:false});
 
   $('#chat-fullscreen').innerHTML=`<div class="fixed inset-0 z-[100] bg-slate-100 dark:bg-slate-950 flex flex-col">
-    <!-- Vollbild-Chat Top-Bar -->
     <div class="glass !rounded-none border-x-0 border-t-0 px-4 py-3 flex items-center justify-between gap-3">
       <div class="flex items-center gap-3 min-w-0">
         <button class="btn2" onclick="closeChat()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Schließen</button>
@@ -721,10 +729,8 @@ window.openChat=async(id,asAdmin)=>{
       </div>`:''}
     </div>
 
-    <!-- Nachrichtenverlauf im Vollbild -->
     <div id="c-list" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 max-w-4xl w-full mx-auto"></div>
 
-    <!-- Eingabeleiste unten -->
     <div class="glass !rounded-none border-x-0 border-b-0 p-3 sm:p-4">
       <div class="max-w-4xl mx-auto space-y-2">
         <div id="c-prev"></div>
@@ -734,22 +740,25 @@ window.openChat=async(id,asAdmin)=>{
         </div>`:''}
         <div class="flex gap-2">
           <label class="btn2 shrink-0" title="Screenshot hochladen"><i data-lucide="image" class="w-5 h-5"></i><input type="file" accept="image/*" hidden onchange="pick(this,'c-prev')"></label>
-          <input id="s-c-msg" class="inp" placeholder="Nachricht eingeben…" onkeydown="if(event.key=='Enter')sendMsg('${id}',${asAdmin})">
+          <input id="s-c-msg" class="inp" placeholder="${asAdmin?'Nachricht eingeben… (/passwort bei Passwort-Tickets)':'Nachricht eingeben…'}" onkeydown="if(event.key=='Enter')sendMsg('${id}',${asAdmin})">
           <button id="btn-chat-send" class="btn shrink-0" onclick="sendMsg('${id}',${asAdmin})"><i data-lucide="send" class="w-4 h-4"></i>Senden</button>
         </div>
       </div>
     </div>
   </div>`;
   icons();
+  // Gelöstes Ticket: Schüler kann nicht mehr schreiben, aber wieder öffnen
+  if(!asAdmin&&t.status==='Gelöst')$('#c-prev').closest('.glass').innerHTML=`<div class="max-w-4xl mx-auto flex items-center justify-between gap-3 flex-wrap"><span class="text-sm opacity-70">Dieses Ticket ist gelöst.</span><button class="btn" onclick="reopenTicket('${id}')">Du hast noch weitere Fragen?</button></div>`;
 
   unsubMsg&&unsubMsg();
   unsubMsg=DB.msgs(id,async ms=>{
     const l=$('#c-list');if(!l)return;
     const mySide=asAdmin?'scout':'student';
     const visibleMs=ms.filter(m=>!m.internal||asAdmin);
-    const passwordCard=(S.user?.role==='Admin'||t.uid===S.user?.uid)?await DB.passwordGet(id).catch(()=>null):null;
-    const privateCard=passwordCard&&passwordCard.expiresAt?.toMillis?.()>Date.now()?`<section class="glass p-4 border-2 border-amber-400 space-y-3"><div class="font-bold">🔐 Private Zugangsdaten</div><p class="text-xs opacity-70">Nur für dich und die Admins sichtbar. Bestätige vor dem Anzeigen, dass niemand anderes deinen Bildschirm sehen kann.</p><button class="btn2" onclick="revealTicketPassword('${id}')">Zugangsdaten anzeigen</button><div id="pw-card-${id}" class="hidden space-y-2"><div class="text-sm">Plattform: <b>${esc(passwordCard.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(passwordCard.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">••••••••••</b></div><button class="btn2" onclick="copyTicketPassword('${id}')">Passwort kopieren</button><p class="text-xs opacity-60">Löschung nach drei Tagen vorgesehen.</p></div></section>`:'';
-    l.innerHTML=privateCard+visibleMs.map(m=>{
+    const isOwner=t.uid===S.user?.uid,hasPw=ms.some(m=>m.passwordCard);
+    const pwc=isOwner&&hasPw?await DB.passwordGet(id).catch(()=>null):null,live=pwc&&pwc.expiresAt?.toMillis?.()>Date.now();
+    const privateCard=!hasPw?'':isOwner?(live?`<section class="glass p-4 border-2 border-amber-400 space-y-2"><div class="font-bold">🔐 Deine Zugangsdaten</div><div class="text-sm">App: <b>${esc(pwc.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(pwc.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">••••••••••</b></div><div class="flex gap-2"><button class="btn2" onclick="revealTicketPassword('${id}')">Einblenden</button><button class="btn2" onclick="copyTicketPassword('${id}')">Kopieren</button></div></section>`:''):`<section class="glass p-4 text-sm space-y-2"><div class="font-bold">🔐 Zugangsdaten gesendet</div><div class="rounded bg-black h-6 w-48"></div></section>`;
+    l.innerHTML=visibleMs.map(m=>{
       if(m.internal){
         return `<div class="flex justify-center"><div class="max-w-xl w-full px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs">
           <div class="font-bold flex items-center gap-1.5 mb-0.5"><i data-lucide="lock" class="w-3.5 h-3.5"></i>Interne Scout-Notiz von ${esc(m.senderName)} · ${fmt(m.ts)}</div>
@@ -764,13 +773,22 @@ window.openChat=async(id,asAdmin)=>{
           ${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 cursor-zoom-in border border-white/20">`:''}
         </div>
       </div>`;
-    }).join('')||`<div class="text-center opacity-50 text-sm py-12">Noch keine Nachrichten.</div>`;
+    }).join('')+privateCard||`<div class="text-center opacity-50 text-sm py-12">Noch keine Nachrichten.</div>`;
     l.scrollTop=l.scrollHeight;icons();
   });
 };
 
-window.revealTicketPassword=async id=>{const t=await DB.get('tickets',id);if(!t||(S.user?.role!=='Admin'&&t.uid!==S.user?.uid))return toast('Kein Zugriff auf diese Zugangsdaten.');if(!confirm('Bitte prüfe, dass niemand anderes deinen Bildschirm sehen kann. Zugangsdaten jetzt anzeigen?'))return;const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');const el=$('#pw-value-'+id);if(el)el.textContent=d.password;$('#pw-card-'+id)?.classList.remove('hidden');};
-window.copyTicketPassword=async id=>{const t=await DB.get('tickets',id);if(!t||(S.user?.role!=='Admin'&&t.uid!==S.user?.uid))return toast('Kein Zugriff auf diese Zugangsdaten.');const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');try{await navigator.clipboard.writeText(d.password);toast('Passwort kopiert.')}catch(e){toast('Kopieren nicht möglich.')}};
+window.revealTicketPassword=async id=>{
+  if(!confirm('Bitte prüfe, dass gerade niemand auf deinen Bildschirm schaut. Passwort jetzt einblenden?'))return;
+  const d=await DB.passwordGet(id).catch(()=>null);
+  if(!d||d.uid!==S.user?.uid||d.expiresAt?.toMillis?.()<=Date.now())return toast('Die Zugangsdaten sind nicht mehr verfügbar.');
+  const e=$('#pw-value-'+id);if(e)e.textContent=d.password;
+};
+window.copyTicketPassword=async id=>{
+  const d=await DB.passwordGet(id).catch(()=>null);
+  if(!d||d.uid!==S.user?.uid||d.expiresAt?.toMillis?.()<=Date.now())return toast('Die Zugangsdaten sind nicht mehr verfügbar.');
+  try{await navigator.clipboard.writeText(d.password);toast('Passwort kopiert.')}catch(e){toast('Kopieren nicht möglich.')}
+};
 window.setChatMode=isNote=>{
   S.chatNoteMode=isNote;
   const bChat=$('#btn-mode-chat'),bNote=$('#btn-mode-note'),inp=$('#s-c-msg'),sendBtn=$('#btn-chat-send');
@@ -790,20 +808,36 @@ window.setChatMode=isNote=>{
 
 window.claimTicket=async id=>{
   const ticket=S.tickets.find(t=>t.id===id)||await DB.get('tickets',id);
-  if(ticket?.passwordReset&&ticket.status==='Gelöst')return toast('Gelöste Passwort-Tickets können nicht übernommen werden.');
-  if(ticket?.passwordReset&&S.user?.role!=='Admin')return toast('Passwort-Tickets dürfen nur Admins übernehmen.');
-  if(S.user?.role!=='Admin'&&S.user?.role!=='Medienscout')return toast('Keine Berechtigung.');
+  if(!ticket)return toast('Ticket nicht gefunden.');
+  if(ticket.status==='Gelöst')return toast('Gelöste Tickets können nicht übernommen werden.');
+  if(!isStaff())return toast('Keine Berechtigung.');
+  if(ticket.passwordReset&&S.user.role!=='Admin')return toast('Passwort-Tickets dürfen nur Admins übernehmen.');
+  if(ticket.assignedUid&&ticket.assignedUid!==S.user.uid&&S.user.role!=='Admin')return toast('Dieses Ticket wurde schon übernommen.');
   await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});
   if($('#c-assign'))$('#c-assign').textContent='Betreuer: '+S.user.name;
   if($('#c-st'))$('#c-st').innerHTML=badge('In Bearbeitung');
   toast('Du hast das Ticket übernommen.');
 };
 
-window.updStatus=async(id,st)=>{const t=await DB.get('tickets',id);if(t?.passwordReset&&t.status==='Gelöst')return toast('Dieses Passwort-Ticket ist bereits abgeschlossen.');if(t?.passwordReset&&S.user?.role!=='Admin')return toast('Nur Admins dürfen den Status von Passwort-Tickets ändern.');await DB.upd('tickets',id,{status:st,updatedAt:Date.now(),...(st==='Gelöst'?{resolvedAt:Date.now()}:{})});$('#c-st').innerHTML=badge(st)};
+window.updStatus=async(id,st)=>{
+  const t=await DB.get('tickets',id);if(!t)return;
+  if(t.passwordReset&&S.user?.role!=='Admin')return toast('Nur Admins dürfen den Status von Passwort-Tickets ändern.');
+  await DB.upd('tickets',id,{status:st,updatedAt:Date.now(),...(st==='Gelöst'?{resolvedAt:Date.now(),unreadStudent:true,...(t.passwordReset?{assignedUid:null,assignedName:null}:{})}:{})});
+  if(st==='Gelöst'){closeChat();toast('Ticket gelöst. Es ist jetzt nur noch für den Schüler sichtbar.')}
+  else if($('#c-st'))$('#c-st').innerHTML=badge(st);
+};
+
+// Schüler öffnet ein gelöstes Ticket wieder (mit Warnhinweis)
+window.reopenTicket=async id=>{
+  const t=await DB.get('tickets',id);if(!t||t.uid!==S.user?.uid)return;
+  if(!confirm('Achtung: Der bisherige Chat, den bisher nur Admins und zuständige Medienscouts sehen konnten, wird jetzt für alle Medienscouts sichtbar, damit sie wissen, worum es geht. Passwörter bleiben verdeckt und sind nur für dich sichtbar.\n\nDas Ticket kann dann von allen berechtigten Personen gesehen werden, bis es wieder von jemandem übernommen wird.\n\nEinverstanden?'))return;
+  await DB.upd('tickets',id,{passwordReset:false,status:'Neu',assignedUid:null,assignedName:null,updatedAt:Date.now(),unreadAdmin:true,unreadStudent:false,reopened:true});
+  openChat(id,false);
+};
 
 window.sendMsg=async(id,asAdmin)=>{
   const currentTicket=await DB.get('tickets',id);if(!currentTicket)return toast('Ticket nicht gefunden.');
-  if(currentTicket.passwordReset&&currentTicket.status==='Gelöst')return toast('Dieses Passwort-Ticket ist abgeschlossen. Bestätige zuerst die Fortsetzung als normales Ticket.');
+  if(currentTicket.status==='Gelöst')return toast('Dieses Ticket ist gelöst.');
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
   if(asAdmin&&!S.chatNoteMode&&text.startsWith('/')){$('#s-c-msg').value='';await runSlashCommand(id,text);return;}
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
@@ -812,25 +846,37 @@ window.sendMsg=async(id,asAdmin)=>{
   $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML='';
 };
 
+// ---------- Slash-Befehle ----------
 const defaultSlashCommands=()=>[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}];
 window.openSlashEditor=id=>{
   const list=S.settings.slashCommands||defaultSlashCommands(),c=list.find(x=>x.id===id)||{id:'cmd-'+Date.now(),name:'neuer-befehl',label:'Neue Nachricht',active:true,requiresPassword:false,roles:['Admin','Medienscout'],message:'',image:''};
+  const isPw=c.name==='passwort';
   modal(`<div class="space-y-3"><div class="flex items-center justify-between"><h3 class="font-bold text-lg">${id?'Befehl bearbeiten':'Neuen Befehl erstellen'}</h3><button class="btn2" onclick="closeModal()">Schließen</button></div>
-    <label class="block text-xs">Befehlsname (ohne /)<input id="sc-name" class="inp mt-1" value="${esc(c.name)}" placeholder="passwort"></label>
+    <label class="block text-xs">Befehlsname (ohne /)<input id="sc-name" class="inp mt-1" value="${esc(c.name)}" placeholder="passwort" ${isPw?'readonly':''}></label>
     <label class="block text-xs">Bezeichnung<input id="sc-label" class="inp mt-1" value="${esc(c.label)}"></label>
     <label class="block text-xs">Chat-Nachricht<textarea id="sc-message" rows="4" class="inp mt-1" placeholder="Nachricht an den Schüler…">${esc(c.message||'')}</textarea></label>
-    <label class="block text-xs">Bild-URL (optional)<input id="sc-image" class="inp mt-1" value="${esc(c.image||'')}" placeholder="https://…"></label>
+    <div class="text-xs">Bild (optional)
+      <div id="sc-image-prev" class="mt-1">${c.image?`<img src="${c.image}" class="h-20 rounded-lg">`:''}</div>
+      <label class="btn2 mt-1"><i data-lucide="image" class="w-4 h-4"></i>Bild auswählen<input type="file" accept="image/*" hidden onchange="pickSlashImage(this)"></label>
+      <button class="btn2 mt-1 !text-rose-500" onclick="window._slashImg='';$('#sc-image-prev').innerHTML=''">Bild entfernen</button>
+    </div>
     <label class="flex items-center gap-2 text-sm"><input id="sc-active" type="checkbox" ${c.active?'checked':''}> Befehl aktiviert</label>
-    <label class="flex items-center gap-2 text-sm"><input id="sc-password" type="checkbox" ${c.requiresPassword?'checked':''}> Vor dem Senden Passwortfeld anzeigen</label>
+    <label class="flex items-center gap-2 text-sm"><input id="sc-password" type="checkbox" ${c.requiresPassword?'checked':''} ${isPw?'disabled':''}> Vor dem Senden Zugangsdaten-Felder anzeigen</label>
     <label class="block text-xs">Wer darf den Befehl nutzen?<select id="sc-roles" class="inp mt-1"><option value="both" ${(c.roles||[]).length!==1?'selected':''}>Admin und Medienscout</option><option value="admin" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Admin'?'selected':''}>Nur Admin</option><option value="scout" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Medienscout'?'selected':''}>Nur Medienscout</option></select></label>
-    <button class="btn w-full" onclick="saveSlashCommand('${esc(c.id)}')">Befehl speichern</button></div>`);
+    <button class="btn w-full" data-id="${esc(c.id)}" onclick="saveSlashCommand(this.dataset.id)">Befehl speichern</button></div>`);
+  window._slashImg=c.image||'';
+};
+window.pickSlashImage=async inp=>{
+  if(!inp.files[0])return;
+  window._slashImg=await compress(inp.files[0],1000,0.8);
+  $('#sc-image-prev').innerHTML=`<img src="${window._slashImg}" class="h-20 rounded-lg">`;inp.value='';
 };
 window.saveSlashCommand=async id=>{
   const name=val('sc-name').toLowerCase().replace(/[^a-z0-9_-]/g,'');if(!name)return toast('Bitte einen gültigen Befehlsnamen eingeben.');
   const list=[...(S.settings.slashCommands||defaultSlashCommands())];if(list.some(x=>x.name===name&&x.id!==id))return toast('Diesen Befehl gibt es bereits.');
   let roles=val('sc-roles')==='admin'?['Admin']:val('sc-roles')==='scout'?['Medienscout']:['Admin','Medienscout'];
   const requiresPassword=name==='passwort'?true:$('#sc-password').checked;if(name==='passwort')roles=['Admin'];
-  const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:val('sc-image'),active:$('#sc-active').checked,requiresPassword,roles};
+  const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:window._slashImg||'',active:$('#sc-active').checked,requiresPassword,roles};
   const exists=list.some(x=>x.id===id);
   const next=exists?list.map(x=>x.id===id?c:x):[...list,c];
   await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:next});closeModal();toast('Slash-Befehl gespeichert.');render();
@@ -844,12 +890,13 @@ window.runSlashCommand=async(ticketId,input)=>{
   if(!(cmd.roles||['Admin','Medienscout']).includes(S.user.role))return toast('Du darfst diesen Befehl nicht verwenden.');
   if(name==='passwort'&&!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
   const ticket=await DB.get('tickets',ticketId);if(!ticket)return toast('Ticket nicht gefunden.');
-  if(name==='passwort'&&(!ticket.passwordReset||S.user?.role!=='Admin'))return toast('Der Passwort-Befehl kann nur von Admins in Passwort-Tickets genutzt werden.');
-  modal(`<div class="space-y-3"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}</p>
-    ${cmd.requiresPassword?'<label class="block text-xs">Neuer Benutzername (optional)<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
-    <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(cmd.message||'')}</div>${cmd.image?'<img src="'+esc(cmd.image)+'" class="rounded-xl max-h-48 object-contain">':''}
-    ${cmd.requiresPassword?'<p class="text-xs text-amber-600 dark:text-amber-400">Die Zugangsdaten erscheinen als private Passwortkarte im Ticket. Nur der betroffene Schüler und Admins dürfen sie sehen.</p>':''}
-    <div class="flex gap-2"><button class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button class="btn flex-1" onclick="submitSlashCommand('${ticketId}','${esc(cmd.id)}')">${cmd.requiresPassword?'Passwort sicher senden':'Nachricht senden'}</button></div></div>`);
+  if(name==='passwort'&&!ticket.passwordReset)return toast('Der Passwort-Befehl kann nur in Passwort-Tickets genutzt werden.');
+  const guideText=name==='passwort'?(S.settings.pwGuideText||cmd.message||''):(cmd.message||''),guideImg=name==='passwort'?(S.settings.pwGuideImage||cmd.image||''):(cmd.image||'');
+  modal(`<div class="space-y-3"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}${ticket.passwordPlatform?' · App: <b>'+esc(ticket.passwordPlatform)+'</b>':''}</p>
+    ${cmd.requiresPassword?'<label class="block text-xs">Benutzername<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
+    <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(guideText)}</div>${guideImg?'<img src="'+guideImg+'" class="rounded-xl max-h-48 object-contain">':''}
+    ${cmd.requiresPassword?'<p class="text-xs text-amber-600 dark:text-amber-400">Die Zugangsdaten sind im Chat für Admins nur als schwarzer Balken sichtbar. Der Schüler sieht den Benutzernamen und kann das Passwort einblenden. Danach wird das Ticket automatisch freigegeben und als gelöst markiert.</p>':''}
+    <div class="flex gap-2"><button class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button class="btn flex-1" data-t="${esc(ticketId)}" data-c="${esc(cmd.id)}" onclick="submitSlashCommand(this.dataset.t,this.dataset.c)">${cmd.requiresPassword?'Fertig – Zugangsdaten senden':'Nachricht senden'}</button></div></div>`);
 };
 window.submitSlashCommand=async(ticketId,cmdId)=>{
   const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.id===cmdId);if(!cmd)return toast('Befehl nicht gefunden.');
@@ -860,11 +907,11 @@ window.submitSlashCommand=async(ticketId,cmdId)=>{
     const secret=$('#sc-secret')?.value||'',username=$('#sc-username')?.value.trim()||'';
     if(!secret)return toast('Bitte das neue Passwort eingeben.');
     await DB.passwordSet(ticketId,{ticketId,uid:ticket.uid,platform:ticket.passwordPlatform||'',username,password:secret,createdAt:now,expiresAt:Timestamp.fromDate(new Date(now+3*24*60*60*1000))});
-    await DB.addMsg(ticketId,{from:'admin',senderName:S.user.name+' (Admin)',senderRole:'Admin',text:cmd.message||'Dein Passwort wurde zurückgesetzt. Bitte beachte die folgende Anleitung.',img:cmd.image||null,internal:false,ts:now,passwordCard:true});
-    await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'Gelöst',resolvedAt:now});
-    closeModal();toast('Zugangsdaten und Anleitung wurden gesendet. Ticket gelöst.');return;
+    await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+' (Admin)',senderRole:'Admin',text:S.settings.pwGuideText||cmd.message||'Dein Passwort wurde zurückgesetzt. Bitte beachte die folgende Anleitung.',img:S.settings.pwGuideImage||cmd.image||null,internal:false,ts:now,passwordCard:true});
+    await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'Gelöst',resolvedAt:now,assignedUid:null,assignedName:null});
+    closeModal();closeChat();toast('Zugangsdaten gesendet. Ticket gelöst und freigegeben.');return;
   }
-  await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+' (Scout)',senderRole:S.user.role,text:cmd.message||'',img:cmd.image||null,internal:false,ts:now});
+  await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+(S.user.role==='Admin'?' (Admin)':' (Medienscout)'),senderRole:S.user.role,text:cmd.message||'',img:cmd.image||null,internal:false,ts:now});
   await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'});closeModal();toast('Nachricht gesendet.');
 };
 
@@ -875,10 +922,9 @@ window.sendApp=async()=>{
   toast('Bewerbung gespeichert!');
 };
 
-
-// ---------- Persönliches Profil & einfache Einstellungen ----------
+// ---------- Persönliches Profil ----------
 function profileView(){
-  const u=S.user, prefs=u.preferences||{};
+  const u=S.user;
   const tickets=S.myTickets.length, applications=S.myApps.length;
   const favs=[...(u.mediaState?.articlesFavorites||[]).map(id=>({kind:'articles',item:S.articles.find(x=>x.id===id)})),...(u.mediaState?.videosFavorites||[]).map(id=>({kind:'videos',item:S.videos.find(x=>x.id===id)}))].filter(x=>x.item);
   const favoritesMarkup=S.settings.mediaFavorites===false?'':`<section class="glass p-5 space-y-3"><h2 class="font-semibold">Meine Merkliste</h2>${favs.map(x=>`<div class="flex items-center justify-between gap-2 text-sm"><button class="text-left flex-1" onclick="${x.kind==='articles'?`openArtPage('${x.item.id}')`:`openVideo('${x.item.id}')`}">${esc(x.item.title)}</button><button class="btn2 !p-1.5" onclick="updateMediaState('${x.kind}','${x.item.id}','favorites')"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')||'<p class="text-xs opacity-60">Noch keine gemerkten Inhalte.</p>'}</section>`;
@@ -929,26 +975,31 @@ window.confirmLogout=()=>{
 // ---------- ADMIN-TERMINAL ----------
 const TABS=[
   ['settings','sliders-horizontal','Einstellungen & Design'],
+  ['pwset','key-round','Passwort-Modul'],
   ['feedback','message-square-heart','Feedback'],
   ['content','book-open','Artikel & Videos'],
   ['tickets','inbox','Support-Desk'],
+  ['claimed','user-cog','Beansprucht'],
   ['surveys','bar-chart-3','Umfragen & Export'],
   ['board','pin','Schwarzes Brett'],
   ['apps','user-check','Bewerbungen'],
   ['team','users','Accounts & CSV-Import']
 ];
+const ADMIN_ONLY_TABS=['pwset','claimed'];
 
 function adminView(){
-  const visibleTickets=S.tickets.filter(t=>!(t.passwordReset&&t.status==='Gelöst')&&(S.user?.role==='Admin'||!t.passwordReset));
+  const visibleTickets=deskTickets();
+  if(S.user.role!=='Admin'&&ADMIN_ONLY_TABS.includes(S.adminTab))S.adminTab='settings';
   const nNew=visibleTickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
+  const nClaimed=S.user.role==='Admin'?claimedTickets().length:0;
   return `<div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-2xl font-bold flex items-center gap-2"><i data-lucide="shield" class="text-blue-600"></i>Admin-Terminal</h1>
       <span class="text-xs px-3 py-1 rounded-full bg-blue-500/15 text-blue-500 font-semibold">Angemeldet als ${esc(S.user.name)} (${esc(S.user.role)})</span>
     </div>
     <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
-      ${TABS.map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}</button>`).join('')}
+      ${TABS.filter(x=>S.user.role==='Admin'||!ADMIN_ONLY_TABS.includes(x[0])).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}${k=='claimed'&&nClaimed?` (${nClaimed})`:''}</button>`).join('')}
     </div>
     ${adminTabs[S.adminTab]()}
   </div>`;
@@ -966,7 +1017,11 @@ window.savePasswordPlatforms=async()=>{
   const list=($('#password-platforms')?.value||'').split(/[\n,]/).map(x=>x.trim()).filter(Boolean);
   if(!list.length)return toast('Bitte mindestens eine Plattform eintragen.');
   await DB.set('settings','main',{...S.settings,setupDone:true,passwordPlatforms:list});
-  toast('Plattformliste gespeichert.');render();
+  toast('Plattformliste gespeichert.');
+};
+window.savePwGuideText=async()=>{
+  await DB.set('settings','main',{...S.settings,setupDone:true,pwGuideText:$('#pw-guide-text')?.value||''});
+  toast('Anleitungstext gespeichert.');
 };
 window.saveBrand=async()=>{
   await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
@@ -1011,22 +1066,16 @@ const adminTabs={
         <button class="btn" onclick="saveBrand()">Texte speichern</button>
       </div>
 
-      <div class="glass p-5 space-y-3">
-        <h3 class="font-bold text-base">Passwort-Ticketsystem</h3><p class="text-xs opacity-70">Eigene Einstellungen für Passwort-Anfragen, Plattformen, die Anleitung und den Admin-Befehl zur Übergabe der Zugangsdaten.</p>
-        ${toggleRow('passwordSupport','Passwort-Zurücksetzen-System','Schaltet die Passwort-Zurücksetzen-Funktion im Ticketformular vollständig ein oder aus. Bei Aktivierung erscheint „Passwort zurücksetzen“ als auswählbare Kategorie.')}
-        <div class="text-xs opacity-70">Plattformen, die Schüler beim Passwort-Reset auswählen können (eine pro Zeile oder kommagetrennt).</div>
-        <textarea id="password-platforms" rows="3" class="inp" placeholder="Minecraft&#10;Roblox&#10;Instagram">${esc(passwordPlatforms().join('\n'))}</textarea>
-        <button class="btn2 w-full" onclick="savePasswordPlatforms()">Plattformliste speichern</button>
-        <div class="text-xs opacity-70">Die Anfragen werden als normale Support-Tickets angelegt. Es wird kein Reset-Link für Firebase versendet.</div>
-        <h3 class="font-bold text-base pt-3 border-t border-slate-200 dark:border-slate-700">Anleitung & Chat-Befehle</h3>
+      ${S.user.role==='Admin'?`<div class="glass p-5 space-y-3">
+        <h3 class="font-bold text-base">Chat-Befehle (Slash)</h3>
+        <p class="text-xs opacity-70">Alles zum Passwort-Zurücksetzen (Apps, Anleitung mit Bild) findest du im Tab „Passwort-Modul“.</p>
         ${toggleRow('slashCommandsEnabled','Eigene Slash-Befehle','Befehle wie /passwort direkt im geöffneten Support-Chat ausführen')}
         <div class="space-y-2"><div class="text-xs opacity-70">Konfigurierte Befehle</div>
-          ${(S.settings.slashCommands||[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}]).map(c=>`<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex items-center gap-2"><div class="flex-1 min-w-0"><div class="font-semibold text-sm">/${esc(c.name)} · ${esc(c.label||'Eigener Befehl')}</div><div class="text-xs opacity-60">${c.active?'Aktiv':'Deaktiviert'} · ${c.requiresPassword?'mit Passwortfeld':'ohne Passwortfeld'}</div></div><button class="btn2" onclick="openSlashEditor('${esc(c.id)}')">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="deleteSlashCommand('${esc(c.id)}')">Löschen</button></div>`).join('')}
+          ${(S.settings.slashCommands||defaultSlashCommands()).map(c=>`<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex items-center gap-2"><div class="flex-1 min-w-0"><div class="font-semibold text-sm">/${esc(c.name)} · ${esc(c.label||'Eigener Befehl')}</div><div class="text-xs opacity-60">${c.active?'Aktiv':'Deaktiviert'} · ${c.requiresPassword?'mit Zugangsdaten-Feldern':'ohne Zugangsdaten-Felder'}</div></div><button class="btn2" data-id="${esc(c.id)}" onclick="openSlashEditor(this.dataset.id)">Bearbeiten</button>${c.name!=='passwort'?`<button class="btn2 !text-rose-500" data-id="${esc(c.id)}" onclick="deleteSlashCommand(this.dataset.id)">Löschen</button>`:''}</div>`).join('')}
           <button class="btn w-full" onclick="openSlashEditor('')"><i data-lucide="plus" class="w-4 h-4"></i>Eigenen Befehl erstellen</button>
         </div>
-        <p class="text-xs opacity-70">Passwörter werden getrennt in der Firestore-Sammlung <b>ticketPasswords</b> gespeichert und nicht als normale Chatnachricht ausgegeben. Die Passwortkarte sehen nur der betroffene Schüler und Admins. Nach drei Tagen wird sie in der Oberfläche als abgelaufen behandelt; für eine automatische endgültige Löschung muss zusätzlich die Firestore-TTL-Regel für <code>expiresAt</code> aktiviert sein.</p>
-      </div>
-      <div class="glass p-5 space-y-3"><h3 class="font-bold text-base">Seitenaufruf-Statistik</h3><div class="text-3xl font-bold">${S.pageViews.toLocaleString('de-DE')}</div><p class="text-xs opacity-70">Gezählte Seitenaufrufe durch angemeldete Nutzer seit Aktivierung dieser Statistik. Es werden keine Nutzer-IDs für diese Zählung gespeichert.</p></div>
+      </div>`:''}
+      ${S.user.role==='Admin'?`<div class="glass p-5 space-y-3"><h3 class="font-bold text-base">Seitenaufruf-Statistik</h3><div class="text-3xl font-bold">${S.pageViews.toLocaleString('de-DE')}</div><p class="text-xs opacity-70">Gezählte Seitenaufrufe durch angemeldete Nutzer seit Aktivierung dieser Statistik. Es werden keine Nutzer-IDs für diese Zählung gespeichert.</p></div>`:''}
       <div class="glass p-5 space-y-4">
         <h3 class="font-bold text-base">Design & Darstellung</h3>
         <div class="flex items-center gap-3">
@@ -1043,11 +1092,32 @@ const adminTabs={
     </div>
   </div>`,
 
+  pwset:()=>`<div class="max-w-2xl space-y-4">
+    <h3 class="font-bold text-base">Passwort-Zurücksetzen-Modul</h3>
+    <p class="text-xs opacity-70">Schüler klicken oben auf „Passwort zurücksetzen“, wählen die App und es entsteht ein Ticket, das nur Admins sehen und übernehmen können. Der Admin nutzt im Chat den Befehl <code>/passwort</code>.</p>
+    ${toggleRow('passwordSupport','Passwort-Zurücksetzen aktiv','Zeigt Schülern oben den Button „Passwort zurücksetzen“')}
+    <div class="glass p-5 space-y-2">
+      <div class="text-sm font-semibold">Apps zur Auswahl (eine pro Zeile)</div>
+      <textarea id="password-platforms" rows="5" class="inp" placeholder="Untis&#10;Schulportal">${esc(passwordPlatforms().join('\n'))}</textarea>
+      <button class="btn2" onclick="savePasswordPlatforms()">Liste speichern</button>
+    </div>
+    <div class="glass p-5 space-y-3">
+      <div class="text-sm font-semibold">Anleitung, die mit /passwort verschickt wird</div>
+      <textarea id="pw-guide-text" rows="5" class="inp" placeholder="Schritt-für-Schritt-Anleitung zum Anmelden mit dem neuen Passwort…">${esc(S.settings.pwGuideText||'')}</textarea>
+      <button class="btn2" onclick="savePwGuideText()">Text speichern</button>
+      <div class="flex items-center gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+        ${S.settings.pwGuideImage?`<img src="${S.settings.pwGuideImage}" class="h-20 rounded-lg border border-slate-500/30">`:'<div class="text-xs opacity-60">Noch kein Bild</div>'}
+        <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Bild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'pwGuideImage',1000)"></label>
+        ${S.settings.pwGuideImage?`<button class="btn2 !text-rose-500" onclick="setSet('pwGuideImage','')">Entfernen</button>`:''}
+      </div>
+    </div>
+    <p class="text-xs opacity-70">Zugangsdaten werden getrennt in der Firestore-Sammlung <b>ticketPasswords</b> gespeichert und erscheinen im Chat nie im Klartext. Admins sehen nur einen schwarzen Balken, der Schüler kann das Passwort einblenden. Die Anzeige läuft nach drei Tagen ab; für die endgültige Löschung muss die Firestore-TTL-Regel für <code>expiresAt</code> aktiviert sein.</p>
+  </div>`,
+
   content:()=>{
     const v=S.edit?.t=='v'?S.videos.find(x=>x.id==S.edit.id):null;
     const a=S.edit?.t=='a'?S.articles.find(x=>x.id==S.edit.id):null;
     return `<div class="grid lg:grid-cols-2 gap-6">
-      <!-- Artikel -->
       <div class="space-y-4">
         <div class="glass p-5 space-y-3">
           <h3 class="font-bold">${a?'Artikel bearbeiten':'Artikel / Anleitung veröffentlichen'}</h3>
@@ -1079,7 +1149,6 @@ const adminTabs={
         </div>
       </div>
 
-      <!-- Videos -->
       <div class="space-y-4">
         <div class="glass p-5 space-y-3">
           <h3 class="font-bold">${v?'Video bearbeiten':'YouTube-Video hinzufügen'}</h3>
@@ -1087,7 +1156,7 @@ const adminTabs={
           <input id="v-title" class="inp" placeholder="Titel des Videos" value="${v?esc(v.title):''}">
           <select id="v-cat" class="inp">${CATS.map(c=>`<option ${v&&v.cat==c?'selected':''}>${c}</option>`).join('')}</select>
           <label class="flex items-center gap-2 text-xs font-medium cursor-pointer"><input id="v-pin" type="checkbox" class="accent-blue-600" ${v?.pinned?'checked':''}> Video oben anpinnen</label>
-          <textarea id="v-desc" rows="3" class="inp" placeholder="Kurze Beschreibung">${v?esc(v.desc):''}</textarea>
+          <textarea id="v-desc" rows="3" class="inp" placeholder="Kurze Beschreibung">${v?esc(v.desc||''):''}</textarea>
           <div class="flex gap-2">
             <button class="btn2" onclick="previewMediaDraft('videos')"><i data-lucide="eye" class="w-4 h-4"></i>Vorschau</button><button class="btn" onclick="saveVideo('${v?.id||''}')">Speichern</button>
             ${v?`<button class="btn2" onclick="S.edit=null;render()">Abbrechen</button>`:''}
@@ -1112,15 +1181,16 @@ const adminTabs={
 
   tickets:()=>`<div class="space-y-3">
     <div class="flex items-center justify-between">
-      <p class="text-xs opacity-70">Klicke auf ein Ticket für den Vollbild-Chat oder übernimm es direkt.</p>
+      <p class="text-xs opacity-70">Offene und von dir übernommene Tickets. Gelöste Tickets verschwinden hier und sind nur noch für den Schüler sichtbar.</p>
     </div>
-    ${visibleTickets.map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
+    ${deskTickets().map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
       <button onclick="openChat('${t.id}',true)" class="flex-1 text-left flex items-center gap-3 cursor-pointer min-w-[240px]">
         ${t.unreadAdmin?`<span class="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" title="Neue Nachricht"></span>`:''}
         <div>
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
             ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
+            ${t.reopened?'<span class="text-[10px] px-2 py-0.5 rounded bg-amber-500 text-white">Wieder geöffnet</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
           </div>
@@ -1130,19 +1200,32 @@ const adminTabs={
       <div class="flex items-center gap-2">
         ${t.assignedUid!=S.user.uid?`<button class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>`:''}
         <button class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Vollbild-Chat</button>
-        <button class="btn2 !text-rose-500" onclick="delItem('tickets','${t.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+        ${S.user.role==='Admin'?`<button class="btn2 !text-rose-500" onclick="delItem('tickets','${t.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`:''}
       </div>
     </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine Tickets vorhanden.</div>'}
   </div>`,
 
+  claimed:()=>`<div class="space-y-3">
+    <p class="text-xs opacity-70">Von anderen übernommene, noch nicht gelöste Tickets. Nur Admins sehen diesen Bereich und können die Arbeit der Medienscouts kontrollieren.</p>
+    ${claimedTickets().map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <div class="font-bold text-sm flex items-center gap-2 flex-wrap"><span>${esc(t.subject||t.category)}</span>${badge(t.status)}<span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">Betreut von: ${esc(t.assignedName||'-')}</span></div>
+        <div class="text-xs opacity-70 mt-1">Schüler: <b>${esc(t.userName||'Schüler')}</b> (${esc(t.userEmail||'-')}) · ${esc(t.category)} · ${fmt(t.updatedAt||t.createdAt)}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>
+        <button class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Chat ansehen</button>
+      </div>
+    </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine beanspruchten Tickets.</div>'}
+  </div>`,
+
   surveys:()=>`<div class="grid lg:grid-cols-5 gap-6">
-    <!-- Neue Umfrage mit Klassen-Bedingungen anlegen -->
     <div class="glass p-5 space-y-3 lg:col-span-2 h-fit">
       <h3 class="font-bold text-base">Neue Umfrage erstellen</h3>
-      <input id="sv-title" class="inp" placeholder="Titel der Umfrage">
-      <textarea id="sv-desc" rows="2" class="inp" placeholder="Kurze Beschreibung"></textarea>
+      <input id="sv-title" class="inp" placeholder="Titel der Umfrage" value="${esc(S.svDraft?.title||'')}">
+      <textarea id="sv-desc" rows="2" class="inp" placeholder="Kurze Beschreibung">${esc(S.svDraft?.desc||'')}</textarea>
       <label class="flex items-center gap-2 text-xs font-medium cursor-pointer">
-        <input id="sv-anon" type="checkbox" class="accent-blue-600" checked> Anonyme Umfrage (ohne Namen speichern)
+        <input id="sv-anon" type="checkbox" class="accent-blue-600" ${S.svDraft?.anon===false?'':'checked'}> Anonyme Umfrage (ohne Namen speichern)
       </label>
 
       <div class="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
@@ -1163,15 +1246,14 @@ const adminTabs={
 
       <div class="space-y-1.5">
         ${S.surveyBuilderQs.map((q,i)=>`<div class="p-2 rounded-lg bg-slate-500/10 text-xs flex items-center justify-between gap-2">
-          <div><b>${i+1}. ${esc(q.text)}</b> <span class="opacity-60">(${q.targetClass})</span></div>
-          <button class="text-rose-500" onclick="S.surveyBuilderQs.splice(${i},1);render()">✕</button>
+          <div><b>${i+1}. ${esc(q.text)}</b> <span class="opacity-60">(${esc(q.targetClass)})</span></div>
+          <button class="text-rose-500" onclick="removeBuilderQ(${i})">✕</button>
         </div>`).join('')}
       </div>
 
       <button class="btn w-full" onclick="saveSurvey()"><i data-lucide="check" class="w-4 h-4"></i>Umfrage veröffentlichen</button>
     </div>
 
-    <!-- Bestehende Umfragen & Auswertung / CSV-Download -->
     <div class="space-y-4 lg:col-span-3">
       <h3 class="font-bold text-base">Vorhandene Umfragen & Auswertung</h3>
       ${S.surveys.map(s=>`<div class="glass p-4 space-y-3">
@@ -1235,12 +1317,11 @@ const adminTabs={
         <input id="u-pw" type="text" class="inp" placeholder="Start-Passwort (min. 6 Zeichen)">
         <div class="grid grid-cols-2 gap-2">
           <select id="u-class" class="inp">${CLASSES.filter(c=>c!='Alle').map(c=>`<option>${c}</option>`).join('')}</select>
-          <select id="u-role" class="inp"><option>Schüler</option><option>Medienscout</option><option>Admin</option></select>
+          <select id="u-role" class="inp"><option>Schüler</option><option>Medienscout</option>${S.user.role==='Admin'?'<option>Admin</option>':''}</select>
         </div>
         <button class="btn w-full" onclick="addUser()"><i data-lucide="user-plus" class="w-4 h-4"></i>Account anlegen</button>
       </div>
 
-      <!-- Nr. 6 (neu): CSV-Massenimport für Schul-Accounts -->
       <div class="glass p-5 space-y-3">
         <h3 class="font-bold flex items-center gap-2"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-500"></i>CSV-Massenimport (Schülerliste)</h3>
         <p class="text-xs opacity-70">Format pro Zeile: <code>Name;Email;Passwort;Klasse;Rolle</code></p>
@@ -1260,11 +1341,11 @@ const adminTabs={
           <div class="text-xs opacity-60">${esc(u.email)}</div>
         </div>
         <div class="flex items-center gap-2">
-          <button class="btn2 !text-blue-500" onclick="openStartUserTicketModal('${u.id}','${esc(u.name)}','${esc(u.email)}')" title="Diesen Schüler direkt anschreiben"><i data-lucide="mail" class="w-3.5 h-3.5"></i>Anschreiben</button>
-          <select class="inp !w-auto !py-1.5 !px-2 text-xs" onchange="DB.upd('users','${u.id}',{role:this.value});toast('Rolle aktualisiert')">
+          <button class="btn2 !text-blue-500" data-uid="${esc(u.id)}" data-name="${esc(u.name)}" data-email="${esc(u.email)}" onclick="openStartUserTicketModal(this.dataset.uid,this.dataset.name,this.dataset.email)" title="Diesen Schüler direkt anschreiben"><i data-lucide="mail" class="w-3.5 h-3.5"></i>Anschreiben</button>
+          ${S.user.role==='Admin'?`<select class="inp !w-auto !py-1.5 !px-2 text-xs" onchange="DB.upd('users','${u.id}',{role:this.value});toast('Rolle aktualisiert')">
             ${['Schüler','Medienscout','Admin'].map(r=>`<option ${u.role==r?'selected':''}>${r}</option>`).join('')}
-          </select>
-          ${u.id!=S.user.uid?`<button class="btn2 !text-rose-500" onclick="delItem('users','${u.id}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`:''}
+          </select>`:`<span class="text-xs opacity-60">${esc(u.role||'Schüler')}</span>`}
+          ${S.user.role==='Admin'&&u.id!=S.user.uid?`<button class="btn2 !text-rose-500" onclick="delItem('users','${u.id}')"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`:''}
         </div>
       </div>`).join('')}
     </div>
@@ -1272,25 +1353,33 @@ const adminTabs={
 };
 
 // ---------- Umfrage-Funktionen & CSV-Export ----------
+const saveSvDraft=()=>{S.svDraft={title:val('sv-title'),desc:val('sv-desc'),anon:$('#sv-anon')?.checked??true}};
 window.addBuilderQ=()=>{
+  saveSvDraft();
   const text=val('sv-q-text'),type=val('sv-q-type'),targetClass=val('sv-q-class'),opts=val('sv-q-opts');
   if(!text)return toast('Bitte Fragetext eingeben.');
   const options=type=='choice'?(opts?opts.split(',').map(x=>x.trim()).filter(Boolean):['Ja','Nein']):[];
   S.surveyBuilderQs.push({id:'q'+Date.now(),text,type,targetClass,options});
-  $('#sv-q-text').value='';$('#sv-q-opts').value='';render();
+  render();
 };
+window.removeBuilderQ=i=>{saveSvDraft();S.surveyBuilderQs.splice(i,1);render()};
 
 window.saveSurvey=async()=>{
   const title=val('sv-title'),desc=val('sv-desc'),anonymous=$('#sv-anon')?.checked??true;
-  if(!title||!S.surveyBuilderQs.length)return toast('Bitte Titel und mindestens eine Frage hinzufügen.');
-  await DB.add('surveys',{title,desc,anonymous,questions:S.surveyBuilderQs,active:true,createdAt:Date.now()});
-  S.surveyBuilderQs=[];toast('Umfrage veröffentlicht!');render();
+  if(!title)return toast('Bitte einen Titel für die Umfrage eingeben.');
+  if(!S.surveyBuilderQs.length)return toast('Bitte mindestens eine Frage hinzufügen (Button „Frage zur Liste hinzufügen“).');
+  try{
+    await DB.add('surveys',{title,desc,anonymous,questions:S.surveyBuilderQs,active:true,createdAt:Date.now()});
+  }catch(e){return toast('Fehler beim Speichern: '+(e.code||e.message))}
+  S.surveyBuilderQs=[];S.svDraft=null;toast('Umfrage veröffentlicht!');render();
 };
 
 window.loadSurveyResults=sid=>{
   const sv=S.surveys.find(x=>x.id==sid);if(!sv)return;
-  S.activeResultSurvey=sv;
-  DB.surveyResp(sid,res=>{S.surveyResults=res;render()});
+  S.activeResultSurvey=sv;S.surveyResults=[];
+  S.unsubSurveyResp&&S.unsubSurveyResp();
+  S.unsubSurveyResp=DB.surveyResp(sid,res=>{S.surveyResults=res;render()});
+  render();
 };
 
 function renderSurveyEvaluation(){
@@ -1359,9 +1448,10 @@ window.runCsvImport=async()=>{
   for(const line of lines){
     const [name,email,pw,klass,role]=line.split(/[;,]/).map(x=>x?.trim());
     if(!name||!email||!pw||pw.length<6)continue;
+    const r=S.user.role==='Admin'?(role||'Schüler'):(role==='Admin'?'Schüler':(role||'Schüler'));
     try{
       const c=await createUserWithEmailAndPassword(sa,email,pw);
-      await DB.set('users',c.user.uid,{name,email,klass:klass||'Klasse 8',role:role||'Schüler',createdAt:Date.now()});
+      await DB.set('users',c.user.uid,{name,email,klass:klass||'Klasse 8',role:r,createdAt:Date.now()});
       await signOut(sa);ok++;
     }catch(e){}
   }
@@ -1403,7 +1493,8 @@ window.saveArt=async id=>{
   S.edit=null;toast('Artikel gespeichert.');render();
 };
 window.addUser=async()=>{
-  const email=val('u-mail'),name=val('u-name'),pw=val('u-pw'),klass=val('u-class'),role=val('u-role');
+  const email=val('u-mail'),name=val('u-name'),pw=val('u-pw'),klass=val('u-class');
+  let role=val('u-role');if(S.user.role!=='Admin'&&role==='Admin')role='Schüler';
   if(!email||!name||pw.length<6)return toast('Bitte alle Felder korrekt ausfüllen.');
   try{
     const sec=initializeApp(firebaseConfig,'sec'+Date.now()),sa=getAuth(sec);
