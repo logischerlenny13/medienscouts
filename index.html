@@ -55,14 +55,15 @@ const S={
     tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,profileExtras:true,feedback:true,personalization:true,mediaLibrary:true,mediaFavorites:true,mediaProgress:true,mediaNewBadge:true,mediaRelated:true,
     activityOverview:true,privateMessages:true,helpCenter:true,privateMessagingPolicy:'all',
     slashCommandsEnabled:true,passwordSupport:true,
-    slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
+    slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
   needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],feedbackItems:[],helpArticles:[],privateMessages:[],
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
-  adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,
+  adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,pageViews:0,
   chatNoteMode:false,surveyBuilderQs:[],surveyResults:[],activeResultSurvey:null,unsubs:[]
 };
+let lastCountedView=null;
 
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast=t=>{$('#toast').innerHTML=`<div class="glass px-4 py-2.5 text-sm font-medium shadow-xl border-blue-500/40">${esc(t)}</div>`;setTimeout(()=>$('#toast').innerHTML='',3400)};
@@ -110,7 +111,7 @@ onAuthStateChanged(auth,async u=>{
     p={email:u.email,name:u.email.split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
     await DB.set('users',u.uid,p);
   }
-  S.user={uid:u.uid,...p};
+  S.user={uid:u.uid,...p};lastCountedView=null;
   if(S.settings.personalization&&typeof p.preferences?.darkMode==='boolean')document.documentElement.classList.toggle('dark',p.preferences.darkMode);
   if(S.open=='login')closeModal();
 
@@ -125,6 +126,7 @@ onAuthStateChanged(auth,async u=>{
   if(['Admin','Medienscout'].includes(p.role)){
     const w=(c,k,o)=>S.unsubs.push(DB.watch(c,d=>{S[k]=d;render()},o));
     w('tickets','tickets','updatedAt');
+    if(p.role==='Admin')S.unsubs.push(DB.watch('pageViews',d=>{S.pageViews=d.length;render()}));
     w('applications','apps','createdAt');
     w('users','users');
     w('feedback','feedbackItems','createdAt');
@@ -155,6 +157,7 @@ function render(){
   else content=homeView();
 
   $('#app').innerHTML=nav()+`<main class="max-w-5xl w-full mx-auto px-4 py-8 flex-1">${content}</main>`+footer();
+  if(S.user&&lastCountedView!==S.view){lastCountedView=S.view;DB.add('pageViews',{ts:Date.now()}).catch(e=>console.warn('Seitenaufruf konnte nicht gezählt werden',e));}
   icons();
 }
 
@@ -475,6 +478,7 @@ function studentTicketsView(){
           <div class="space-y-1">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold text-sm">${esc(t.subject||t.category)}</span>
+              ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
               ${badge(t.status)}
               ${t.assignedName?`<span class="text-[11px] px-2 py-0.5 rounded bg-slate-500/15">Betreut von: ${esc(t.assignedName)}</span>`:''}
               ${t.unreadStudent?`<span class="text-[11px] bg-blue-600 text-white px-2 py-0.5 rounded-full">Neue Nachricht</span>`:''}
@@ -668,7 +672,7 @@ window.startTicketForStudent=async(uid,name,email)=>{
   if(!subj||!msg)return toast('Bitte Betreff und Nachricht eingeben.');
   const now=Date.now();
   const ref=await DB.add('tickets',{
-    uid,userName:name,userEmail:email,subject:subj,category:cat,status:'In Bearbeitung',
+    uid,userName:name,userEmail:email,subject:subj,category:cat,passwordReset:false,status:'In Bearbeitung',
     assignedUid:S.user.uid,assignedName:S.user.name,
     createdAt:now,updatedAt:now,unreadAdmin:false,unreadStudent:true
   });
@@ -682,6 +686,12 @@ window.closeChat=()=>{unsubMsg&&unsubMsg();unsubMsg=null;$('#chat-fullscreen').i
 
 window.openChat=async(id,asAdmin)=>{
   const t=await DB.get('tickets',id).catch(()=>null);if(!t)return toast('Ticket nicht gefunden.');
+  if(t.passwordReset&&t.status==='Gelöst'&&S.user?.role==='Admin')return toast('Gelöste Passwort-Tickets sind nicht mehr im Web-Adminbereich verfügbar.');
+  if(t.passwordReset&&t.status==='Gelöst'&&S.user?.uid===t.uid){
+    if(!confirm('Dieses Passwort-Ticket ist abgeschlossen. Wenn du fortfährst, wird es als normales Support-Ticket für die Medienscouts sichtbar. Die privaten Zugangsdaten bleiben getrennt und werden nicht im Chat angezeigt. Möchtest du fortfahren?'))return;
+    await DB.upd('tickets',id,{passwordReset:false,status:'Neu',updatedAt:Date.now(),unreadAdmin:true,unreadStudent:false,continuedAfterPassword:true});
+    t.passwordReset=false;t.status='Neu';
+  }
   pendingImg['c-prev']=null;S.chatNoteMode=false;
   if(t.passwordReset&&S.user?.role!=='Admin'&&asAdmin)return toast('Passwort-Tickets sind ausschließlich für Admins sichtbar.');
   if(t.passwordReset&&!asAdmin&&t.uid!==S.user?.uid)return toast('Kein Zugriff auf dieses Ticket.');
@@ -737,7 +747,7 @@ window.openChat=async(id,asAdmin)=>{
     const l=$('#c-list');if(!l)return;
     const mySide=asAdmin?'scout':'student';
     const visibleMs=ms.filter(m=>!m.internal||asAdmin);
-    const passwordCard=t.passwordReset&&(asAdmin||t.uid===S.user?.uid)?await DB.passwordGet(id).catch(()=>null):null;
+    const passwordCard=(S.user?.role==='Admin'||t.uid===S.user?.uid)?await DB.passwordGet(id).catch(()=>null):null;
     const privateCard=passwordCard&&passwordCard.expiresAt?.toMillis?.()>Date.now()?`<section class="glass p-4 border-2 border-amber-400 space-y-3"><div class="font-bold">🔐 Private Zugangsdaten</div><p class="text-xs opacity-70">Nur für dich und die Admins sichtbar. Bestätige vor dem Anzeigen, dass niemand anderes deinen Bildschirm sehen kann.</p><button class="btn2" onclick="revealTicketPassword('${id}')">Zugangsdaten anzeigen</button><div id="pw-card-${id}" class="hidden space-y-2"><div class="text-sm">Plattform: <b>${esc(passwordCard.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(passwordCard.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">••••••••••</b></div><button class="btn2" onclick="copyTicketPassword('${id}')">Passwort kopieren</button><p class="text-xs opacity-60">Löschung nach drei Tagen vorgesehen.</p></div></section>`:'';
     l.innerHTML=privateCard+visibleMs.map(m=>{
       if(m.internal){
@@ -759,8 +769,8 @@ window.openChat=async(id,asAdmin)=>{
   });
 };
 
-window.revealTicketPassword=async id=>{if(!confirm('Bitte prüfe, dass niemand anderes deinen Bildschirm sehen kann. Zugangsdaten jetzt anzeigen?'))return;const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');const el=$('#pw-value-'+id);if(el)el.textContent=d.password;$('#pw-card-'+id)?.classList.remove('hidden');};
-window.copyTicketPassword=async id=>{const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');try{await navigator.clipboard.writeText(d.password);toast('Passwort kopiert.')}catch(e){toast('Kopieren nicht möglich.')}};
+window.revealTicketPassword=async id=>{const t=await DB.get('tickets',id);if(!t||(S.user?.role!=='Admin'&&t.uid!==S.user?.uid))return toast('Kein Zugriff auf diese Zugangsdaten.');if(!confirm('Bitte prüfe, dass niemand anderes deinen Bildschirm sehen kann. Zugangsdaten jetzt anzeigen?'))return;const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');const el=$('#pw-value-'+id);if(el)el.textContent=d.password;$('#pw-card-'+id)?.classList.remove('hidden');};
+window.copyTicketPassword=async id=>{const t=await DB.get('tickets',id);if(!t||(S.user?.role!=='Admin'&&t.uid!==S.user?.uid))return toast('Kein Zugriff auf diese Zugangsdaten.');const d=await DB.passwordGet(id);if(!d||d.expiresAt?.toMillis?.()<=Date.now())return toast('Diese Zugangsdaten sind abgelaufen.');try{await navigator.clipboard.writeText(d.password);toast('Passwort kopiert.')}catch(e){toast('Kopieren nicht möglich.')}};
 window.setChatMode=isNote=>{
   S.chatNoteMode=isNote;
   const bChat=$('#btn-mode-chat'),bNote=$('#btn-mode-note'),inp=$('#s-c-msg'),sendBtn=$('#btn-chat-send');
@@ -780,6 +790,7 @@ window.setChatMode=isNote=>{
 
 window.claimTicket=async id=>{
   const ticket=S.tickets.find(t=>t.id===id)||await DB.get('tickets',id);
+  if(ticket?.passwordReset&&ticket.status==='Gelöst')return toast('Gelöste Passwort-Tickets können nicht übernommen werden.');
   if(ticket?.passwordReset&&S.user?.role!=='Admin')return toast('Passwort-Tickets dürfen nur Admins übernehmen.');
   if(S.user?.role!=='Admin'&&S.user?.role!=='Medienscout')return toast('Keine Berechtigung.');
   await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});
@@ -788,9 +799,11 @@ window.claimTicket=async id=>{
   toast('Du hast das Ticket übernommen.');
 };
 
-window.updStatus=async(id,st)=>{await DB.upd('tickets',id,{status:st,updatedAt:Date.now()});$('#c-st').innerHTML=badge(st)};
+window.updStatus=async(id,st)=>{const t=await DB.get('tickets',id);if(t?.passwordReset&&t.status==='Gelöst')return toast('Dieses Passwort-Ticket ist bereits abgeschlossen.');if(t?.passwordReset&&S.user?.role!=='Admin')return toast('Nur Admins dürfen den Status von Passwort-Tickets ändern.');await DB.upd('tickets',id,{status:st,updatedAt:Date.now(),...(st==='Gelöst'?{resolvedAt:Date.now()}:{})});$('#c-st').innerHTML=badge(st)};
 
 window.sendMsg=async(id,asAdmin)=>{
+  const currentTicket=await DB.get('tickets',id);if(!currentTicket)return toast('Ticket nicht gefunden.');
+  if(currentTicket.passwordReset&&currentTicket.status==='Gelöst')return toast('Dieses Passwort-Ticket ist abgeschlossen. Bestätige zuerst die Fortsetzung als normales Ticket.');
   const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
   if(asAdmin&&!S.chatNoteMode&&text.startsWith('/')){$('#s-c-msg').value='';await runSlashCommand(id,text);return;}
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
@@ -799,7 +812,7 @@ window.sendMsg=async(id,asAdmin)=>{
   $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML='';
 };
 
-const defaultSlashCommands=()=>[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}];
+const defaultSlashCommands=()=>[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}];
 window.openSlashEditor=id=>{
   const list=S.settings.slashCommands||defaultSlashCommands(),c=list.find(x=>x.id===id)||{id:'cmd-'+Date.now(),name:'neuer-befehl',label:'Neue Nachricht',active:true,requiresPassword:false,roles:['Admin','Medienscout'],message:'',image:''};
   modal(`<div class="space-y-3"><div class="flex items-center justify-between"><h3 class="font-bold text-lg">${id?'Befehl bearbeiten':'Neuen Befehl erstellen'}</h3><button class="btn2" onclick="closeModal()">Schließen</button></div>
@@ -815,8 +828,9 @@ window.openSlashEditor=id=>{
 window.saveSlashCommand=async id=>{
   const name=val('sc-name').toLowerCase().replace(/[^a-z0-9_-]/g,'');if(!name)return toast('Bitte einen gültigen Befehlsnamen eingeben.');
   const list=[...(S.settings.slashCommands||defaultSlashCommands())];if(list.some(x=>x.name===name&&x.id!==id))return toast('Diesen Befehl gibt es bereits.');
-  const roles=val('sc-roles')==='admin'?['Admin']:val('sc-roles')==='scout'?['Medienscout']:['Admin','Medienscout'];
-  const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:val('sc-image'),active:$('#sc-active').checked,requiresPassword:$('#sc-password').checked,roles};
+  let roles=val('sc-roles')==='admin'?['Admin']:val('sc-roles')==='scout'?['Medienscout']:['Admin','Medienscout'];
+  const requiresPassword=name==='passwort'?true:$('#sc-password').checked;if(name==='passwort')roles=['Admin'];
+  const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:val('sc-image'),active:$('#sc-active').checked,requiresPassword,roles};
   const exists=list.some(x=>x.id===id);
   const next=exists?list.map(x=>x.id===id?c:x):[...list,c];
   await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:next});closeModal();toast('Slash-Befehl gespeichert.');render();
@@ -925,7 +939,7 @@ const TABS=[
 ];
 
 function adminView(){
-  const visibleTickets=S.user?.role==='Admin'?S.tickets:S.tickets.filter(t=>!t.passwordReset);
+  const visibleTickets=S.tickets.filter(t=>!(t.passwordReset&&t.status==='Gelöst')&&(S.user?.role==='Admin'||!t.passwordReset));
   const nNew=visibleTickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
   return `<div class="space-y-6">
@@ -968,7 +982,7 @@ window.uploadAsset=async(inp,key,max)=>{
 const adminTabs={
   settings:()=>`<div class="grid md:grid-cols-2 gap-6">
     <div class="space-y-3">
-      <h3 class="font-bold text-base">Module aktivieren / deaktivieren</h3>
+      <h3 class="font-bold text-base">Allgemeine Einstellungen · Module</h3>
       ${toggleRow('mediaLibrary','Artikel- und Video-Bereich','Startseite, Suche und Übersichten für Artikel und Videos ein-/ausschalten')}
       ${toggleRow('mediaFavorites','Merkliste','Lesezeichen und persönliche Merkliste ein-/ausschalten')}
       ${toggleRow('mediaProgress','Gelesen-/Angesehen-Markierung','Persönlichen Lesefortschritt ein-/ausschalten')}
@@ -977,7 +991,7 @@ const adminTabs={
       ${toggleRow('profileExtras','Zusatzfunktionen im Profil','Schüler sehen persönliche Einstellungen und weitere Profilbereiche')}
       ${toggleRow('feedback','Feedback-Funktion','Schüler können im Profil Rückmeldungen senden')}
       ${toggleRow('personalization','Personalisierung','Persönliche Darstellungsoptionen im Profil')}
-      ${toggleRow('tickets','Support-Ticket-System','Schüler können Tickets erstellen & mit euch chatten')}
+      <div class="pt-3 mt-2 border-t border-slate-200 dark:border-slate-700"><h3 class="font-bold text-base mb-3">Ticket-System · Allgemein</h3>${toggleRow('tickets','Support-Ticket-System','Schüler können Tickets erstellen & mit euch chatten')}</div>
       ${toggleRow('apps','Bewerbungs-Modul','Bewerbungsformular für neue Medienscouts freischalten')}
       ${toggleRow('allowReg','Selbst-Registrierung im Login-Fenster','Schüler können sich selbst einen Account anlegen')}
       ${toggleRow('artFeedback','Hilfreich-Abfrage unter Artikeln (👍/👎)','Zeigt unter jeder Anleitung die Frage „Hat dir dieser Artikel geholfen?“')}
@@ -998,22 +1012,23 @@ const adminTabs={
       </div>
 
       <div class="glass p-5 space-y-3">
-        <h3 class="font-bold text-base">Externer Passwort-Support</h3>
+        <h3 class="font-bold text-base">Passwort-Ticketsystem</h3><p class="text-xs opacity-70">Eigene Einstellungen für Passwort-Anfragen, Plattformen, die Anleitung und den Admin-Befehl zur Übergabe der Zugangsdaten.</p>
         <div class="text-xs opacity-70">Plattformen, die Schüler beim Passwort-Reset auswählen können (eine pro Zeile oder kommagetrennt).</div>
         <textarea id="password-platforms" rows="3" class="inp" placeholder="Minecraft&#10;Roblox&#10;Instagram">${esc(passwordPlatforms().join('\n'))}</textarea>
         <button class="btn2 w-full" onclick="savePasswordPlatforms()">Plattformliste speichern</button>
         <div class="text-xs opacity-70">Die Anfragen werden als normale Support-Tickets angelegt. Es wird kein Reset-Link für Firebase versendet.</div>
-        <h3 class="font-bold text-base pt-3 border-t border-slate-200 dark:border-slate-700">Chat & Slash-Befehle</h3>
+        <h3 class="font-bold text-base pt-3 border-t border-slate-200 dark:border-slate-700">Anleitung & Chat-Befehle</h3>
         ${toggleRow('slashCommandsEnabled','Eigene Slash-Befehle','Befehle wie /passwort direkt im geöffneten Support-Chat ausführen')}
         ${toggleRow('passwordSupport','Passwort-Support für externe Plattformen','Passwort-Anfragen unabhängig vom Firebase-Login verwalten')}
         <div class="space-y-2"><div class="text-xs opacity-70">Konfigurierte Befehle</div>
-          ${(S.settings.slashCommands||[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin','Medienscout'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}]).map(c=>`<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex items-center gap-2"><div class="flex-1 min-w-0"><div class="font-semibold text-sm">/${esc(c.name)} · ${esc(c.label||'Eigener Befehl')}</div><div class="text-xs opacity-60">${c.active?'Aktiv':'Deaktiviert'} · ${c.requiresPassword?'mit Passwortfeld':'ohne Passwortfeld'}</div></div><button class="btn2" onclick="openSlashEditor('${esc(c.id)}')">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="deleteSlashCommand('${esc(c.id)}')">Löschen</button></div>`).join('')}
+          ${(S.settings.slashCommands||[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}]).map(c=>`<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 flex items-center gap-2"><div class="flex-1 min-w-0"><div class="font-semibold text-sm">/${esc(c.name)} · ${esc(c.label||'Eigener Befehl')}</div><div class="text-xs opacity-60">${c.active?'Aktiv':'Deaktiviert'} · ${c.requiresPassword?'mit Passwortfeld':'ohne Passwortfeld'}</div></div><button class="btn2" onclick="openSlashEditor('${esc(c.id)}')">Bearbeiten</button><button class="btn2 !text-rose-500" onclick="deleteSlashCommand('${esc(c.id)}')">Löschen</button></div>`).join('')}
           <button class="btn w-full" onclick="openSlashEditor('')"><i data-lucide="plus" class="w-4 h-4"></i>Eigenen Befehl erstellen</button>
         </div>
-        <p class="text-xs opacity-70">Sicherheit: Das Passwortfeld kopiert das neue Passwort nur lokal. Das Passwort selbst wird nicht im Chat oder in Firestore gespeichert. Eine direkte einmalige Passwortzustellung benötigt einen geschützten Backend-Endpunkt und passende Firestore-Regeln.</p>
+        <p class="text-xs opacity-70">Passwörter werden getrennt in der Firestore-Sammlung <b>ticketPasswords</b> gespeichert und nicht als normale Chatnachricht ausgegeben. Die Passwortkarte sehen nur der betroffene Schüler und Admins. Nach drei Tagen wird sie in der Oberfläche als abgelaufen behandelt; für eine automatische endgültige Löschung muss zusätzlich die Firestore-TTL-Regel für <code>expiresAt</code> aktiviert sein.</p>
       </div>
+      <div class="glass p-5 space-y-3"><h3 class="font-bold text-base">Seitenaufruf-Statistik</h3><div class="text-3xl font-bold">${S.pageViews.toLocaleString('de-DE')}</div><p class="text-xs opacity-70">Gezählte Seitenaufrufe durch angemeldete Nutzer seit Aktivierung dieser Statistik. Es werden keine Nutzer-IDs für diese Zählung gespeichert.</p></div>
       <div class="glass p-5 space-y-4">
-        <h3 class="font-bold text-base">Logo & Hintergrundbild</h3>
+        <h3 class="font-bold text-base">Design & Darstellung</h3>
         <div class="flex items-center gap-3">
           ${S.settings.logo?`<img src="${S.settings.logo}" class="w-12 h-12 rounded-xl object-contain border border-slate-500/30">`:`<div class="w-12 h-12 rounded-xl bg-slate-500/10 flex items-center justify-center text-xs opacity-50">Kein Logo</div>`}
           <label class="btn2"><i data-lucide="upload" class="w-4 h-4"></i>Logo hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'logo',300)"></label>
@@ -1105,6 +1120,7 @@ const adminTabs={
         <div>
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
+            ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
           </div>
