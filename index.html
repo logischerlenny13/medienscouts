@@ -1631,7 +1631,7 @@ window.setup=async()=>{
   }catch(e){toast('Fehler: '+e.code)}
 };
 
-setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(res.status===403){const info=await res.json().catch(()=>({}));if(info.blocked){await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}}if(!res.ok)console.warn('Regelmäßige Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen.',res.status)}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen; Sitzung bleibt bestehen:',e)}},30000);
+setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?heartbeat=1&deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(res.status===403){const info=await res.json().catch(()=>({}));if(info.blocked){await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}}if(!res.ok)console.warn('Regelmäßige Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen.',res.status)}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen; Sitzung bleibt bestehen:',e)}},30000);
 Object.assign(window,{S,DB,val,render});
 const appRoot=document.getElementById('app');if(appRoot)appRoot.style.display='none';
 render();
