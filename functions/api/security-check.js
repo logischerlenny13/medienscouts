@@ -38,12 +38,16 @@ export async function onRequestGet({request,env}){
    const currentItems=events.results||[];
    const grouped=new Map();
    for(const x of currentItems){
-    const key=x.ip_address||"unknown";
+    // Eine IP kann von vielen Personen geteilt werden. Deshalb immer nach IP
+    // UND Identität gruppieren: Account-ID bei angemeldeten Nutzern,
+    // Gerätekennung bei anonymen Besuchern. Ohne beides bleibt jedes Ereignis einzeln.
+    const identity=x.uid?"uid:"+x.uid:(x.device_id?"device:"+x.device_id:"event:"+x.id);
+    const key=(x.ip_address||"unknown")+"|"+identity;
     const old=grouped.get(key);
-    if(!old)grouped.set(key,{...x,access_count:1,accounts:[x.account_name||x.email||null].filter(Boolean)});
-    else{old.access_count++;if(x.created_at>old.created_at){old.created_at=x.created_at;old.country_code=x.country_code;old.country_name=x.country_name;old.event_type=x.event_type;old.decision=x.decision;old.device_id=x.device_id}if(x.uid){old.uid=x.uid;old.email=x.email;old.account_name=x.account_name}if(x.account_name&&!old.accounts.includes(x.account_name))old.accounts.push(x.account_name)}
+    if(!old)grouped.set(key,{...x,access_count:1});
+    else old.access_count++;
    }
-   const seenIps=new Set(grouped.keys());
+   const seenIps=new Set(currentItems.map(x=>x.ip_address||"unknown"));
    const legacyItems=(legacy.results||[]).filter(x=>!seenIps.has(x.ip_address)).map(x=>({...x,created_at:x.last_seen,event_type:x.last_event_type,account_name:"Noch keine Account-Zuordnung",access_count:x.check_count||1}));
    const ips=await env.SECURITY_DB.prepare("SELECT ip_address,decision,updated_at FROM security_ip_overrides").all();
    const accounts=await env.SECURITY_DB.prepare("SELECT uid,email,account_name,reason,updated_at FROM security_account_blocks").all();
