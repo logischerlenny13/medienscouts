@@ -58,7 +58,7 @@ const S={
     slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
-  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],pubUsers:[],feedbackItems:[],helpArticles:[],privateMessages:[],
+  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],pubUsers:[],feedbackItems:[],helpArticles:[],privateMessages:[],securityIPs:[],securityLoading:false,
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
   adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,pageViews:0,
   chatNoteMode:false,surveyBuilderQs:[],svDraft:null,surveyResults:[],activeResultSurvey:null,unsubs:[],unsubSurveyResp:null
@@ -622,6 +622,12 @@ window.submitAuth=async()=>{
   const email=val('l-mail'),pw=val('l-pw'),name=val('l-name'),klass=val('l-class');
   if(!email)return toast('Bitte E-Mail-Adresse eingeben.');
   try{
+    let securityPreflight=null;
+    if(S.authMode==='login'||S.authMode==='reg'){
+      const check=await fetch('/api/security-check',{method:'GET',cache:'no-store'});
+      securityPreflight=await check.json();
+      if(!check.ok||securityPreflight.blocked){toast('Anmeldung aus diesem Land ist derzeit nicht möglich. Bitte wende dich an die Schule.');return;}
+    }
     if(S.authMode=='reset'){
       await sendPasswordResetEmail(auth,email);
       toast('E-Mail zum Zurücksetzen wurde gesendet!');
@@ -636,6 +642,13 @@ window.submitAuth=async()=>{
       await DB.set('users',c.user.uid,{email,name,klass:klass||'Klasse 8',role:'Schüler',createdAt:Date.now()});
     }else{
       await signInWithEmailAndPassword(auth,email,pw);
+    }
+    if((S.authMode==='login'||S.authMode==='reg')&&auth.currentUser){
+      try{
+        const token=await auth.currentUser.getIdToken();
+        const logged=await fetch('/api/security-check',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({eventType:'login'})});
+        if(!logged.ok)console.warn('Sicherheitsprotokoll konnte nicht aktualisiert werden.');
+      }catch(logError){console.warn('Sicherheitsprotokoll nicht erreichbar:',logError)}
     }
     closeModal();
     if(S.pendingView){S.view=S.pendingView;S.pendingView=null;render()}
@@ -983,9 +996,10 @@ const TABS=[
   ['surveys','bar-chart-3','Umfragen & Export'],
   ['board','pin','Schwarzes Brett'],
   ['apps','user-check','Bewerbungen'],
-  ['team','users','Accounts & CSV-Import']
+  ['team','users','Accounts & CSV-Import'],
+  ['security','shield-check','Sicherheitsprotokoll']
 ];
-const ADMIN_ONLY_TABS=['pwset','claimed'];
+const ADMIN_ONLY_TABS=['pwset','claimed','security'];
 
 function adminView(){
   const visibleTickets=deskTickets();
@@ -993,13 +1007,14 @@ function adminView(){
   const nNew=visibleTickets.filter(t=>t.status=='Neu'||t.unreadAdmin).length;
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
   const nClaimed=S.user.role==='Admin'?claimedTickets().length:0;
+  const nSecurity=S.securityIPs.filter(x=>x.decision==='review'||x.decision==='blocked').length;
   return `<div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-2xl font-bold flex items-center gap-2"><i data-lucide="shield" class="text-blue-600"></i>Admin-Terminal</h1>
       <span class="text-xs px-3 py-1 rounded-full bg-blue-500/15 text-blue-500 font-semibold">Angemeldet als ${esc(S.user.name)} (${esc(S.user.role)})</span>
     </div>
     <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
-      ${TABS.filter(x=>S.user.role==='Admin'||!ADMIN_ONLY_TABS.includes(x[0])).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}${k=='claimed'&&nClaimed?` (${nClaimed})`:''}</button>`).join('')}
+      ${TABS.filter(x=>S.user.role==='Admin'||!ADMIN_ONLY_TABS.includes(x[0])).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;if(k==='security')loadSecurityIPs();render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}${k=='claimed'&&nClaimed?` (${nClaimed})`:''}${k=='security'&&nSecurity?` (${nSecurity})`:''}</button>`).join('')}
     </div>
     ${adminTabs[S.adminTab]()}
   </div>`;
@@ -1034,7 +1049,42 @@ window.uploadAsset=async(inp,key,max)=>{
   toast('Bild gespeichert.');
 };
 
+window.loadSecurityIPs=async()=>{
+  if(S.user?.role!=='Admin')return toast('Nur Admins dürfen das Sicherheitsprotokoll sehen.');
+  S.securityLoading=true;render();
+  try{
+    const token=await auth.currentUser.getIdToken();
+    const res=await fetch('/api/security-check?list=1',{headers:{'Authorization':'Bearer '+token},cache:'no-store'});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error||'Abruf fehlgeschlagen');
+    S.securityIPs=data.items||[];
+  }catch(e){toast('IP-Liste konnte nicht geladen werden: '+e.message)}
+  finally{S.securityLoading=false;render()}
+};
+function securityAdminView(){
+  const items=[...S.securityIPs].sort((a,b)=>String(b.last_seen).localeCompare(String(a.last_seen)));
+  const flagged=items.filter(x=>x.decision==='review'||x.decision==='blocked');
+  return `<div class="space-y-4">
+    <div class="glass p-4 flex flex-wrap items-center justify-between gap-3">
+      <div><h3 class="font-bold">IP-Adressen & Sicherheitsmeldungen</h3><p class="text-xs opacity-70 mt-1">Jede IP-Adresse steht nur einmal in der Liste. Bei erneutem Login wird der letzte Zeitpunkt aktualisiert.</p></div>
+      <button class="btn" onclick="loadSecurityIPs()" ${S.securityLoading?'disabled':''}><i data-lucide="refresh-cw" class="w-4 h-4"></i>${S.securityLoading?'Lädt…':'Aktualisieren'}</button>
+    </div>
+    <div class="grid sm:grid-cols-3 gap-3">
+      <div class="glass p-4"><div class="text-xs opacity-60">Gespeicherte IPs</div><div class="text-2xl font-bold">${items.length}</div></div>
+      <div class="glass p-4"><div class="text-xs opacity-60">Zur Überprüfung</div><div class="text-2xl font-bold text-amber-500">${items.filter(x=>x.decision==='review').length}</div></div>
+      <div class="glass p-4"><div class="text-xs opacity-60">Blockiert</div><div class="text-2xl font-bold text-rose-500">${items.filter(x=>x.decision==='blocked').length}</div></div>
+    </div>
+    ${flagged.length?`<div class="glass p-4 border border-amber-500/40"><div class="font-semibold text-sm mb-2">Neue bzw. auffällige Herkunftsländer</div>${flagged.map(x=>`<div class="text-sm py-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap justify-between gap-2"><span><b>${esc(x.country_name)}</b> · ${esc(x.ip_address)}</span><span class="text-xs ${x.decision==='blocked'?'text-rose-500':'text-amber-500'}">${x.decision==='blocked'?'Blockiert':'Prüfung erforderlich'}</span></div>`).join('')}</div>`:''}
+    <div class="glass overflow-hidden">
+      <div class="p-4 font-semibold">Alle IP-Adressen (${items.length})</div>
+      ${S.securityLoading?'<div class="p-4 text-sm opacity-70">Daten werden geladen…</div>':items.length?`<div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100 dark:bg-slate-800/80"><tr><th class="p-3">IP-Adresse</th><th class="p-3">Land</th><th class="p-3">Erstmals</th><th class="p-3">Zuletzt</th><th class="p-3">Prüfungen</th><th class="p-3">Status</th></tr></thead><tbody>${items.map(x=>`<tr class="border-t border-slate-200 dark:border-slate-800"><td class="p-3 font-mono whitespace-nowrap">${esc(x.ip_address)}</td><td class="p-3 whitespace-nowrap">${esc(x.country_name)} (${esc(x.country_code)})</td><td class="p-3 whitespace-nowrap">${fmt(Date.parse(x.first_seen))}</td><td class="p-3 whitespace-nowrap">${fmt(Date.parse(x.last_seen))}</td><td class="p-3">${Number(x.check_count)||1}</td><td class="p-3 whitespace-nowrap">${x.decision==='blocked'?'<span class="text-rose-500 font-semibold">Blockiert</span>':x.decision==='review'?'<span class="text-amber-500 font-semibold">Prüfen</span>':'<span class="text-emerald-500 font-semibold">Erlaubt</span>'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="p-4 text-sm opacity-70">Noch keine IP-Adressen gespeichert. Nach einem erfolgreichen Login erscheint hier ein Eintrag.</div>'}
+    </div>
+    <p class="text-xs opacity-60">Hinweis: IP-Adressen können von mehreren Personen genutzt werden oder sich ändern. Ein Land-Treffer ist deshalb ein Prüfhinweis und kein Beweis für die Identität einer Person.</p>
+  </div>`;
+}
+
 const adminTabs={
+  security:()=>securityAdminView(),
   settings:()=>`<div class="grid md:grid-cols-2 gap-6">
     <div class="space-y-3">
       <h3 class="font-bold text-base">Allgemeine Einstellungen · Module</h3>
