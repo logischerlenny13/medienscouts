@@ -110,7 +110,10 @@ DB.watch('surveys',d=>{S.surveys=d;render()},'createdAt');
 
 onAuthStateChanged(auth,async u=>{
   S.unsubs.forEach(f=>f());S.unsubs=[];
-  if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';render();return}
+  if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';
+    try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}clearSecurityBlock()}catch(e){console.warn('Sicherheitsprüfung nicht erreichbar:',e)}
+    render();return}
+  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);await signOut(auth);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung konnte nicht durchgeführt werden. Bitte versuche es später erneut.');return}
   let p=await DB.get('users',u.uid);
   if(!p){
     p={email:u.email,name:u.email.split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
@@ -619,6 +622,24 @@ window.openAuth=(mode='login')=>{
     </div>`);
 };
 
+function showSecurityBlock(countryName,message){
+  let box=document.getElementById('security-block-screen');
+  if(!box){box=document.createElement('div');box.id='security-block-screen';box.className='fixed inset-0 z-[9999] flex items-center justify-center p-5 bg-slate-950/95';document.body.appendChild(box)}
+  const country=countryName||'Unbekannt';
+  box.innerHTML=`<div class="w-full max-w-md rounded-3xl border border-rose-400/40 bg-slate-900 p-7 text-center text-white shadow-2xl">
+    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/15 text-rose-400 text-3xl">⛔</div>
+    <h1 class="text-2xl font-bold mb-3">Zugriff gesperrt</h1>
+    <p class="text-sm leading-6 text-slate-200">${message||('Wir haben einen ungewöhnlichen Zugriff aus '+country+' erkannt. Der Zugriff auf diese Webseite wurde aus Sicherheitsgründen blockiert.')}</p>
+    <p class="mt-5 text-xs text-slate-400">Erkannter Standort: <b class="text-rose-300">${esc(country)}</b></p>
+    <p class="mt-5 text-xs text-slate-400">Wenn du glaubst, dass dies ein Fehler ist, wende dich bitte an die Schule.</p>
+  </div>`;
+  const app=document.getElementById('app');if(app)app.style.display='none';
+}
+function clearSecurityBlock(){
+  document.getElementById('security-block-screen')?.remove();
+  const app=document.getElementById('app');if(app)app.style.display='';
+}
+
 function getSecurityDeviceId(){
   const key='medienscouts_security_device';
   let id=localStorage.getItem(key);
@@ -633,7 +654,7 @@ window.submitAuth=async()=>{
     if(S.authMode==='login'||S.authMode==='reg'){
       const deviceId=getSecurityDeviceId();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(deviceId),{method:'GET',cache:'no-store'});
       securityPreflight=await check.json();
-      if(!check.ok||securityPreflight.blocked){toast('Anmeldung aus diesem Land ist derzeit nicht möglich. Bitte wende dich an die Schule.');return;}
+      if(!check.ok||securityPreflight.blocked){showSecurityBlock(securityPreflight.countryName,securityPreflight.error);return;}
     }
     if(S.authMode=='reset'){
       await sendPasswordResetEmail(auth,email);
@@ -1106,7 +1127,7 @@ window.securityAction=async(action,values={})=>{
 };
 
 function securityAdminView(){
-  const items=[...S.securityIPs].sort((a,b)=>String(b.created_at||b.last_seen).localeCompare(String(a.created_at||a.last_seen)));
+  const items=[...S.securityIPs].sort((a,b)=>(b.decision==='blocked'?2:b.decision==='review'?1:0)-(a.decision==='blocked'?2:a.decision==='review'?1:0)||String(b.created_at||b.last_seen).localeCompare(String(a.created_at||a.last_seen)));
   const overrides=S.securityOverrides||[],blocked=S.securityBlockedAccounts||[];
   const ipState=ip=>overrides.find(x=>x.ip_address===ip)?.decision;
   return `<div class="space-y-4">
@@ -1114,7 +1135,7 @@ function securityAdminView(){
     ${S.securitySetupRequired?'<div class="glass p-3 text-sm text-amber-600">Die zusätzlichen Sicherheits-Tabellen müssen noch in D1 angelegt werden. Bis dahin wird die bisherige IP-Liste angezeigt.</div>':''}
     <div class="glass p-4"><div class="font-semibold mb-2">Manuelle IP-Freigabe oder Sperre</div><div class="flex flex-wrap gap-2"><input id="security-ip-manual" class="inp flex-1 min-w-[180px]" placeholder="IP-Adresse"><button class="btn" onclick="securityAction('allow_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP freigeben</button><button class="btn2 !text-rose-500" onclick="securityAction('block_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP sperren</button></div></div>
     <div class="glass p-4"><div class="font-semibold mb-2">Gesperrte Accounts (${blocked.length})</div>${blocked.length?blocked.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t py-2 text-sm"><span><b>${esc(x.account_name||'Account')}</b> · ${esc(x.email||x.uid)}</span><button class="btn2" onclick="securityAction('unban_account',{uid:'${esc(x.uid)}'})">Entsperren</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Accounts.</p>'}<div class="font-semibold mt-4 mb-2">Gesperrte Geräte (${(S.securityBlockedDevices||[]).length})</div>${(S.securityBlockedDevices||[]).length?S.securityBlockedDevices.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t py-2 text-xs"><span class="font-mono">${esc(x.device_id)}</span><button class="btn2" onclick="securityAction('unban_device',{targetDeviceId:'${esc(x.device_id)}'})">Gerät freigeben</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Geräte.</p>'}</div>
-    <div class="glass overflow-hidden"><div class="p-4 font-semibold">Letzte Zugriffe (${items.length})</div>${S.securityLoading?'<div class="p-4">Lädt…</div>':items.length?`<div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100 dark:bg-slate-800"><tr><th class="p-3">IP-Adresse</th><th class="p-3">Account</th><th class="p-3">Land</th><th class="p-3">Ereignis</th><th class="p-3">Zeitpunkt</th><th class="p-3">Aktionen</th></tr></thead><tbody>${items.map(x=>{const ip=String(x.ip_address||''),uid=String(x.uid||''),manual=ipState(ip);return `<tr class="border-t border-slate-200 dark:border-slate-700"><td class="p-3 font-mono">${esc(ip)}</td><td class="p-3">${esc(x.account_name||'Anonym – kein Account angemeldet')}${x.email?'<br>'+esc(x.email):''}</td><td class="p-3">${esc(x.country_name||'')} (${esc(x.country_code||'')})</td><td class="p-3">${esc(x.event_type||x.last_event_type||'Zugriff')} · ${esc(manual||x.decision||'')}</td><td class="p-3 whitespace-nowrap">${fmt(Date.parse(x.created_at||x.last_seen))}</td><td class="p-3"><div class="flex flex-wrap gap-1">${manual==='allowed'?'<button class="btn2" onclick="securityAction(\'unban_ip\',{ip:\''+esc(ip)+'\'})">Freigabe aufheben</button>':'<button class="btn2" onclick="securityAction(\'allow_ip\',{ip:\''+esc(ip)+'\'})">Freigeben</button>'}<button class="btn2 !text-rose-500" onclick="securityAction('block_ip',{ip:'${esc(ip)}'})">Sperren</button>${uid?`<button class="btn2 !text-rose-500" onclick="securityAction('block_account',{uid:'${esc(uid)}',email:'${esc(x.email||'')}',accountName:'${esc(x.account_name||'')}'})">Account sperren</button>`:''}${x.device_id?`<button class="btn2 !text-rose-500" onclick="securityAction('block_device',{targetDeviceId:'${esc(x.device_id)}'})">Gerät sperren</button>`:''}</div></td></tr>`}).join('')}</tbody></table></div>`:'<div class="p-4 text-sm opacity-70">Noch keine Zugriffe gespeichert.</div>'}</div>
+    <div class="glass overflow-hidden"><div class="p-4 font-semibold">Letzte Zugriffe (${items.length})</div>${S.securityLoading?'<div class="p-4">Lädt…</div>':items.length?`<div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100 dark:bg-slate-800"><tr><th class="p-3">IP-Adresse</th><th class="p-3">Account</th><th class="p-3">Land</th><th class="p-3">Ereignis</th><th class="p-3">Zeitpunkt</th><th class="p-3">Aktionen</th></tr></thead><tbody>${items.map(x=>{const ip=String(x.ip_address||''),uid=String(x.uid||''),manual=ipState(ip),suspicious=x.decision==='blocked'||x.decision==='review';const account=x.account_name||(x.uid?'Account erkannt – Zuordnung fehlt':'Anonym – kein Account angemeldet');return `<tr class="border-t border-slate-200 dark:border-slate-700 ${suspicious?'bg-rose-500/15 text-rose-700 dark:text-rose-300 font-semibold':''}"><td class="p-3 font-mono">${suspicious?'<span class="block text-[10px] uppercase tracking-wider text-rose-600 dark:text-rose-300">⚠ Verdächtig</span>':''}${esc(ip)}${x.access_count>1?'<div class="text-[10px] opacity-70">'+x.access_count+' Zugriffe zusammengefasst</div>':''}</td><td class="p-3">${esc(account)}${x.email?'<br>'+esc(x.email):''}</td><td class="p-3">${esc(x.country_name||'')} (${esc(x.country_code||'')})</td><td class="p-3">${esc(x.event_type||x.last_event_type||'Zugriff')} · ${esc(manual||x.decision||'')}${suspicious?'<br><b class="text-rose-600 dark:text-rose-300">VERDÄCHTIGER ZUGRIFF</b>':''}</td><td class="p-3 whitespace-nowrap">${fmt(Date.parse(x.created_at||x.last_seen))}</td><td class="p-3"><div class="flex flex-wrap gap-1">${manual==='allowed'?'<button class="btn2" onclick="securityAction(\'unban_ip\',{ip:\''+esc(ip)+'\'})">Freigabe aufheben</button>':'<button class="btn2" onclick="securityAction(\'allow_ip\',{ip:\''+esc(ip)+'\'})">Freigeben</button>'}<button class="btn2 !text-rose-500" onclick="securityAction('block_ip',{ip:'${esc(ip)}'})">Sperren</button>${uid?`<button class="btn2 !text-rose-500" onclick="securityAction('block_account',{uid:'${esc(uid)}',email:'${esc(x.email||'')}',accountName:'${esc(x.account_name||'')}'})">Account sperren</button>`:''}${x.device_id?`<button class="btn2 !text-rose-500" onclick="securityAction('block_device',{targetDeviceId:'${esc(x.device_id)}'})">Gerät sperren</button>`:''}</div></td></tr>`}).join('')}</tbody></table></div>`:'<div class="p-4 text-sm opacity-70">Noch keine Zugriffe gespeichert.</div>'}</div>
     <p class="text-xs opacity-60">IP-Freigaben gelten unabhängig von der Länderregel. Eine Account-Sperre folgt dem Account; eine Gerätesperre nutzt eine Kennung im Local Storage und ist durch Löschen der Browserdaten umgehbar.</p>
   </div>`;
 }
