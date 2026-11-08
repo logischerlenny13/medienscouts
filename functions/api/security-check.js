@@ -45,8 +45,15 @@ export async function onRequestGet({request,env}){
  }
  const deviceId=url.searchParams.get("deviceId")||"";
  const override=await getIpOverride(env,ip),c=countryInfo(request);
- if(override==="blocked"||await isDeviceBlocked(env,deviceId))return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled"},403);
- if(override==="allowed")return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
+ const deviceBlocked=await isDeviceBlocked(env,deviceId);
+ if(override==="blocked"||deviceBlocked){
+  try{await logEvent(env,request,null,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
+  return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled"},403);
+ }
+ if(override==="allowed"){
+  try{await logEvent(env,request,null,"anonymous_visit","allowed",deviceId)}catch(e){console.error(e)}
+  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
+ }
  if(c.decision==="blocked"){
   try{await logEvent(env,request,null,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
   return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled"},403);
