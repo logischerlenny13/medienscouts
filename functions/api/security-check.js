@@ -102,7 +102,6 @@ export async function onRequestGet({ request, env }) {
              check_count, last_event_type, decision
       FROM ip_addresses
       ORDER BY last_seen DESC
-      LIMIT 1000
     `).all();
     return json({ items: result.results || [] });
   }
