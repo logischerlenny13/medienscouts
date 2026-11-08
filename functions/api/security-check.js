@@ -1,31 +1,31 @@
 /**
- * Cloudflare Pages Function: serverseitige Erkennung von IP-Herkunftsland.
+ * Cloudflare Pages Function: serverseitige Erkennung des IP-Herkunftslandes.
  *
  * Aufruf: GET /api/security-check
  *
- * Diese erste Stufe ERFASST NICHTS dauerhaft und blockiert noch keine Besucher.
- * Sie liefert nur die vom Cloudflare-Rand ermittelten Daten für einen Funktionstest.
- * Die spätere Admin-Protokollierung und Sperrlogik benötigt eine geschützte,
- * serverseitige Speicherung sowie eine verifizierte Firebase-Identität.
+ * Diese Teststufe speichert keine Besucherdaten und blockiert niemanden.
+ * Die rohe IP-Adresse wird bewusst weder zurückgegeben noch protokolliert.
+ * Eine Zuordnung zu Accounts und ein Admin-Protokoll kommen erst mit
+ * serverseitiger Firebase-Token-Prüfung und geschützter Speicherung hinzu.
  */
 export async function onRequestGet({ request }) {
   const country = (request.headers.get("CF-IPCountry") || "XX").toUpperCase();
-  const ip = request.headers.get("CF-Connecting-IP") || null;
 
   const allowedCountries = new Set(["DE", "AT", "CH"]);
   const knownCountry = country !== "XX" && country !== "T1";
   const allowed = knownCountry && allowedCountries.has(country);
 
+  const countryNames = {
+    DE: "Deutschland",
+    AT: "Österreich",
+    CH: "Schweiz",
+    XX: "Unbekannt"
+  };
+
   return new Response(
     JSON.stringify({
       country,
-      ip,
-      countryName:
-        country === "DE" ? "Deutschland" :
-        country === "AT" ? "Österreich" :
-        country === "CH" ? "Schweiz" :
-        country === "XX" ? "Unbekannt" :
-        country,
+      countryName: countryNames[country] || country,
       allowed,
       status: allowed ? "allowed" : "review",
       enforcement: "disabled",
