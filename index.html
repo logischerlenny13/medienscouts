@@ -113,7 +113,7 @@ onAuthStateChanged(auth,async u=>{
   if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';
     try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Sicherheitsprüfung nicht erreichbar:',e);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte versuche es später erneut.');return}
     render();return}
-  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');await signOut(auth);return}if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);await signOut(auth);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung konnte nicht durchgeführt werden. Bitte versuche es später erneut.');return}
+  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(check.status===403&&info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');await signOut(auth);return}if(!check.ok){console.warn('Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen:',info);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.')}else if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.');}
   let p=await DB.get('users',u.uid);
   if(!p){
     p={email:u.email,name:u.email.split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
@@ -657,7 +657,8 @@ window.submitAuth=async()=>{
     if(S.authMode==='login'||S.authMode==='reg'){
       const deviceId=getSecurityDeviceId();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(deviceId),{method:'GET',cache:'no-store'});
       securityPreflight=await check.json();
-      if(!check.ok||securityPreflight.blocked){showSecurityBlock(securityPreflight.countryName,securityPreflight.error);return;}
+      if(check.status===403&&securityPreflight.blocked){showSecurityBlock(securityPreflight.countryName,securityPreflight.error);return;}
+      if(!check.ok){toast(securityPreflight.error||'Sicherheitsprüfung gerade nicht verfügbar. Bitte später erneut versuchen.');return;}
     }
     if(S.authMode=='reset'){
       await sendPasswordResetEmail(auth,email);
@@ -678,8 +679,8 @@ window.submitAuth=async()=>{
       try{
         const token=await auth.currentUser.getIdToken();
         const logged=await fetch('/api/security-check',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({eventType:'login',deviceId:getSecurityDeviceId()})});
-        if(!logged.ok){const denial=await logged.json().catch(()=>({}));await signOut(auth);toast(denial.error||'Dieser Account ist gesperrt.');return;}
-      }catch(logError){console.warn('Sicherheitsprotokoll nicht erreichbar:',logError)}
+        if(!logged.ok){const denial=await logged.json().catch(()=>({}));await signOut(auth);if(logged.status===403&&denial.blocked){showSecurityBlock(denial.countryName,denial.error)}else{toast(denial.error||'Anmeldung wurde durch die Sicherheitsprüfung nicht freigegeben.')}return;}
+      }catch(logError){console.error('Sicherheitsprotokoll nicht erreichbar:',logError);await signOut(auth);toast('Anmeldung nicht freigegeben: Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte später erneut versuchen.');return;}
     }
     closeModal();
     if(S.pendingView){S.view=S.pendingView;S.pendingView=null;render()}
@@ -1630,7 +1631,7 @@ window.setup=async()=>{
   }catch(e){toast('Fehler: '+e.code)}
 };
 
-setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(!res.ok){const info=await res.json().catch(()=>({}));await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.')}}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen:',e)}},30000);
+setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(res.status===403){const info=await res.json().catch(()=>({}));if(info.blocked){await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}}if(!res.ok)console.warn('Regelmäßige Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen.',res.status)}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen; Sitzung bleibt bestehen:',e)}},30000);
 Object.assign(window,{S,DB,val,render});
 const appRoot=document.getElementById('app');if(appRoot)appRoot.style.display='none';
 render();
