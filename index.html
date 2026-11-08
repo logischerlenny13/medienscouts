@@ -111,9 +111,9 @@ DB.watch('surveys',d=>{S.surveys=d;render()},'createdAt');
 onAuthStateChanged(auth,async u=>{
   S.unsubs.forEach(f=>f());S.unsubs=[];
   if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';
-    try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}clearSecurityBlock()}catch(e){console.error('Sicherheitsprüfung nicht erreichbar:',e);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte versuche es später erneut.');return}
+    try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Sicherheitsprüfung nicht erreichbar:',e);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte versuche es später erneut.');return}
     render();return}
-  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);await signOut(auth);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung konnte nicht durchgeführt werden. Bitte versuche es später erneut.');return}
+  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');await signOut(auth);return}if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);await signOut(auth);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung konnte nicht durchgeführt werden. Bitte versuche es später erneut.');return}
   let p=await DB.get('users',u.uid);
   if(!p){
     p={email:u.email,name:u.email.split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
@@ -622,7 +622,9 @@ window.openAuth=(mode='login')=>{
     </div>`);
 };
 
+let securityBlockSticky=false;
 function showSecurityBlock(countryName,message){
+  securityBlockSticky=true;
   let box=document.getElementById('security-block-screen');
   if(!box){box=document.createElement('div');box.id='security-block-screen';box.className='fixed inset-0 z-[9999] flex items-center justify-center p-5 bg-slate-950/95';document.body.appendChild(box)}
   const country=countryName||'Unbekannt';
@@ -636,6 +638,7 @@ function showSecurityBlock(countryName,message){
   const app=document.getElementById('app');if(app)app.style.display='none';
 }
 function clearSecurityBlock(){
+  if(securityBlockSticky)return;
   document.getElementById('security-block-screen')?.remove();
   const app=document.getElementById('app');if(app)app.style.display='';
 }
