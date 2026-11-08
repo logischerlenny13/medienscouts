@@ -42,6 +42,8 @@ async function upsertIp(env, request, eventType, decisionOverride) {
   if (!env.SECURITY_DB) throw new Error("D1-Bindung SECURITY_DB fehlt");
   const ip = requestIp(request);
   if (ip === "unknown") return;
+  // Datenschutz: nicht mehr benötigte IP-Einträge nach 90 Tagen entfernen.
+  await env.SECURITY_DB.prepare("DELETE FROM ip_addresses WHERE last_seen < datetime('now', '-90 days')").run();
   const country = countryInfo(request);
   const decision = decisionOverride || country.decision;
   const now = new Date().toISOString();
