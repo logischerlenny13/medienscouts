@@ -50,7 +50,7 @@ export async function onRequestGet({request,env}){
   try{await logEvent(env,request,null,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
   return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled"},403);
  }
- if(c.decision==="review"){try{await logEvent(env,request,null,"suspicious_access","review",deviceId)}catch(e){console.error(e)}}
+ try{await logEvent(env,request,null,"anonymous_visit",c.decision,deviceId)}catch(e){console.error(e)}
  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:c.decision,enforcement:"enabled"});
 }
 export async function onRequestPost({request,env}){
@@ -73,6 +73,9 @@ export async function onRequestPost({request,env}){
    }else if(body.action==="block_device"){
     if(!did)return json({error:"Gerätekennung fehlt"},400);
     await env.SECURITY_DB.prepare("INSERT INTO security_devices(device_id,reason,blocked,updated_at,updated_by) VALUES(?,?,1,?,?) ON CONFLICT(device_id) DO UPDATE SET reason=excluded.reason,blocked=1,updated_at=excluded.updated_at,updated_by=excluded.updated_by").bind(did,String(body.reason||"Anonymer Zugriff gesperrt"),new Date().toISOString(),actor.uid).run();
+   }else if(body.action==="unban_device"){
+    if(!did)return json({error:"Gerätekennung fehlt"},400);
+    await env.SECURITY_DB.prepare("DELETE FROM security_devices WHERE device_id=?").bind(did).run();
    }else return json({error:"Unbekannte Aktion"},400);
    return json({ok:true});
   }catch(e){console.error("Sicherheitsaktion fehlgeschlagen:",e);return json({error:"Datenbanktabellen fehlen noch oder Aktion fehlgeschlagen: "+e.message},503)}
