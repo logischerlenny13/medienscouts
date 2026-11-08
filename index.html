@@ -1015,7 +1015,7 @@ function adminView(){
       <span class="text-xs px-3 py-1 rounded-full bg-blue-500/15 text-blue-500 font-semibold">Angemeldet als ${esc(S.user.name)} (${esc(S.user.role)})</span>
     </div>
     <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
-      ${TABS.filter(x=>S.user.role==='Admin'||!ADMIN_ONLY_TABS.includes(x[0])).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="S.adminTab='${k}';S.edit=null;if(k==='security')loadSecurityIPs();render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}${k=='claimed'&&nClaimed?` (${nClaimed})`:''}${k=='security'&&nSecurity?` (${nSecurity})`:''}</button>`).join('')}
+      ${TABS.filter(x=>S.user.role==='Admin'||!ADMIN_ONLY_TABS.includes(x[0])).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="document.activeElement?.blur();S.adminTab='${k}';S.edit=null;if(k==='security')loadSecurityIPs();render()"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}${k=='claimed'&&nClaimed?` (${nClaimed})`:''}${k=='security'&&nSecurity?` (${nSecurity})`:''}</button>`).join('')}
     </div>
     ${adminTabs[S.adminTab]()}
   </div>`;
