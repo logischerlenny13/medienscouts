@@ -1007,7 +1007,22 @@ window.switchAdminTab=(key)=>{
   if(S.user?.role!=='Admin'&&ADMIN_ONLY_TABS.includes(key))return toast('Nur Admins dürfen diesen Bereich öffnen.');
   S.adminTab=key;
   S.edit=null;
-  render(true);
+  const oldError=document.getElementById('admin-tab-error');
+  if(oldError)oldError.remove();
+  try{
+    render(true);
+  }catch(err){
+    console.error('Admin-Tab konnte nicht geöffnet werden:',key,err);
+    const host=document.getElementById('app');
+    if(host){
+      const box=document.createElement('div');
+      box.id='admin-tab-error';
+      box.className='mx-auto my-4 max-w-5xl rounded-xl border border-rose-500 bg-rose-500/10 p-4 text-sm text-rose-700';
+      box.textContent='Fehler beim Öffnen dieses Admin-Bereichs ('+key+'): '+(err?.message||String(err))+'. Bitte diese Meldung an ChatGPT weitergeben.';
+      host.prepend(box);
+    }
+    return;
+  }
   if(key==='security')loadSecurityIPs();
 };
 
