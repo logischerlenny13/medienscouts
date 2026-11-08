@@ -33,21 +33,32 @@ export async function onRequestGet({request,env}){
  if(url.searchParams.get("list")==="1"){
   const u=await admin(request);if(!u)return json({error:"Nicht autorisiert"},403);
   try{
-   const events=await env.SECURITY_DB.prepare("SELECT id,ip_address,country_code,country_name,uid,email,account_name,event_type,decision,device_id,created_at FROM security_events ORDER BY created_at DESC LIMIT 500").all();
+   const events=await env.SECURITY_DB.prepare("SELECT id,ip_address,country_code,country_name,uid,email,account_name,event_type,decision,device_id,created_at FROM security_events ORDER BY created_at DESC LIMIT 2000").all();
    const legacy=await env.SECURITY_DB.prepare("SELECT ip_address,country_code,country_name,first_seen,last_seen,check_count,last_event_type,decision FROM ip_addresses ORDER BY last_seen DESC").all();
    const currentItems=events.results||[];
-   const seenIps=new Set(currentItems.map(x=>x.ip_address));
-   const legacyItems=(legacy.results||[]).filter(x=>!seenIps.has(x.ip_address)).map(x=>({...x,created_at:x.last_seen,event_type:x.last_event_type,account_name:"Noch keine Account-Zuordnung"}));
+   const grouped=new Map();
+   for(const x of currentItems){
+    const key=x.ip_address||"unknown";
+    const old=grouped.get(key);
+    if(!old)grouped.set(key,{...x,access_count:1,accounts:[x.account_name||x.email||null].filter(Boolean)});
+    else{old.access_count++;if(x.created_at>old.created_at){old.created_at=x.created_at;old.country_code=x.country_code;old.country_name=x.country_name;old.event_type=x.event_type;old.decision=x.decision;old.device_id=x.device_id}if(x.uid){old.uid=x.uid;old.email=x.email;old.account_name=x.account_name}if(x.account_name&&!old.accounts.includes(x.account_name))old.accounts.push(x.account_name)}
+   }
+   const seenIps=new Set(grouped.keys());
+   const legacyItems=(legacy.results||[]).filter(x=>!seenIps.has(x.ip_address)).map(x=>({...x,created_at:x.last_seen,event_type:x.last_event_type,account_name:"Noch keine Account-Zuordnung",access_count:x.check_count||1}));
    const ips=await env.SECURITY_DB.prepare("SELECT ip_address,decision,updated_at FROM security_ip_overrides").all();
    const accounts=await env.SECURITY_DB.prepare("SELECT uid,email,account_name,reason,updated_at FROM security_account_blocks").all();
    const devices=await env.SECURITY_DB.prepare("SELECT device_id,reason,updated_at FROM security_devices WHERE blocked=1").all();
-   return json({items:[...currentItems,...legacyItems].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||""))).slice(0,500),overrides:ips.results||[],blockedAccounts:accounts.results||[],blockedDevices:devices.results||[]});
+   const merged=[...grouped.values(),...legacyItems].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+   const priority=x=>x.decision==="blocked"?2:(x.decision==="review"?1:0);
+   merged.sort((a,b)=>priority(b)-priority(a)||String(b.created_at||"").localeCompare(String(a.created_at||"")));
+   return json({items:merged.slice(0,500),overrides:ips.results||[],blockedAccounts:accounts.results||[],blockedDevices:devices.results||[]});
   }catch(e){
    const old=await env.SECURITY_DB.prepare("SELECT ip_address,country_code,country_name,first_seen,last_seen,check_count,last_event_type,decision FROM ip_addresses ORDER BY last_seen DESC").all();
    return json({items:(old.results||[]).map(x=>({...x,created_at:x.last_seen,event_type:x.last_event_type,account_name:"Noch keine Account-Zuordnung"})),setupRequired:true});
   }
  }
  const deviceId=url.searchParams.get("deviceId")||"";
+ const sessionUser=await verifyFirebaseUser(request);
  const override=await getIpOverride(env,ip),c=countryInfo(request);
  const deviceBlocked=await isDeviceBlocked(env,deviceId);
  if(override==="blocked"||deviceBlocked){
@@ -59,10 +70,16 @@ export async function onRequestGet({request,env}){
   return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
  }
  if(c.decision==="blocked"){
-  try{await logEvent(env,request,null,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
-  return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled"},403);
+  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
+  return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled",error:"Zugriff aus "+c.name+" ist nicht erlaubt."},403);
  }
- try{await logEvent(env,request,null,"anonymous_visit",c.decision,deviceId)}catch(e){console.error(e)}
+ if(sessionUser){
+  try{
+   const blocked=await env.SECURITY_DB.prepare("SELECT uid FROM security_account_blocks WHERE uid=?").bind(sessionUser.uid).first();
+   if(blocked)return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"account_blocked",error:"Dieser Account wurde durch die Administration gesperrt."},403);
+  }catch(e){console.error("Account-Sperrprüfung fehlgeschlagen:",e);return json({error:"Sicherheitsprüfung derzeit nicht möglich. Bitte später erneut versuchen."},503)}
+ }
+ try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit",override==="allowed"?"allowed":c.decision,deviceId)}catch(e){console.error(e)}
  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:c.decision,enforcement:"enabled"});
 }
 export async function onRequestPost({request,env}){
@@ -93,12 +110,12 @@ export async function onRequestPost({request,env}){
   }catch(e){console.error("Sicherheitsaktion fehlgeschlagen:",e);return json({error:"Datenbanktabellen fehlen noch oder Aktion fehlgeschlagen: "+e.message},503)}
  }
  const ip=requestIp(request),override=await getIpOverride(env,ip),c=countryInfo(request);
- if(override==="blocked"||await isDeviceBlocked(env,deviceId))return json({error:"Dieser Zugriff ist gesperrt."},403);
- if(c.decision==="blocked"&&override!=="allowed")return json({error:"Anmeldung aus diesem Land ist nicht erlaubt"},403);
+ if(override==="blocked"||await isDeviceBlocked(env,deviceId)){try{await logEvent(env,request,user,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}return json({error:"Dieser Zugriff wurde gesperrt.",country:c.code,countryName:c.name},403)}
+ if(c.decision==="blocked"&&override!=="allowed"){try{await logEvent(env,request,user,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}return json({error:"Ungewöhnlicher Zugriff aus "+c.name+". Dieser Zugriff ist nicht erlaubt.",country:c.code,countryName:c.name},403)}
  try{
   const blocked=await env.SECURITY_DB.prepare("SELECT uid FROM security_account_blocks WHERE uid=?").bind(user.uid).first();
-  if(blocked)return json({error:"Dieser Account wurde durch die Administration gesperrt."},403);
- }catch{}
+  if(blocked)return json({error:"Dieser Account wurde durch die Administration gesperrt.",status:"account_blocked",country:c.code,countryName:c.name},403);
+ }catch(e){console.error("Account-Sperrprüfung fehlgeschlagen:",e);return json({error:"Sicherheitsprüfung derzeit nicht möglich. Bitte später erneut versuchen."},503)}
  await logEvent(env,request,user,"login",override==="allowed"?"allowed":c.decision,deviceId);
  return json({ok:true,status:override==="allowed"?"allowed":c.decision});
 }
