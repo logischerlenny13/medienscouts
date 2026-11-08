@@ -58,7 +58,7 @@ const S={
     slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
     schoolName:'Schulportal · Digitale Hilfe',subTitle:'Anleitungen, Artikel & direkter Support der Medienscouts',logo:'',bg:''
   },
-  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],pubUsers:[],feedbackItems:[],helpArticles:[],privateMessages:[],securityIPs:[],securityLoading:false,
+  needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],pubUsers:[],feedbackItems:[],helpArticles:[],privateMessages:[],securityIPs:[],securityLoading:false,securityAlertCount:0,
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
   adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,pageViews:0,
   chatNoteMode:false,surveyBuilderQs:[],svDraft:null,surveyResults:[],activeResultSurvey:null,unsubs:[],unsubSurveyResp:null
@@ -1059,6 +1059,9 @@ window.loadSecurityIPs=async()=>{
     const data=await res.json();
     if(!res.ok)throw new Error(data.error||'Abruf fehlgeschlagen');
     S.securityIPs=data.items||[];
+    const alertCount=S.securityIPs.filter(x=>x.decision==='review'||x.decision==='blocked').length;
+    if(alertCount>S.securityAlertCount)toast(alertCount+' Sicherheitsmeldung(en) im Admin-Terminal.');
+    S.securityAlertCount=alertCount;
   }catch(e){toast('IP-Liste konnte nicht geladen werden: '+e.message)}
   finally{S.securityLoading=false;render()}
 };
