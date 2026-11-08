@@ -16,7 +16,8 @@ async function verifyFirebaseUser(request){
 async function upsertLegacy(env,r,event,decision){
  const ip=requestIp(r);if(ip==="unknown")return;await env.SECURITY_DB.prepare("DELETE FROM ip_addresses WHERE julianday(last_seen) < julianday('now', '-90 days')").run();
  const c=countryInfo(r),now=new Date().toISOString();
- await env.SECURITY_DB.prepare(`INSERT INTO ip_addresses(ip_address,country_code,country_name,first_seen,last_seen,check_count,last_event_type,decision) VALUES(?,?,?,?,?,1,?,?) ON CONFLICT(ip_address) DO UPDATE SET country_code=excluded.country_code,country_name=excluded.country_name,last_seen=excluded.last_seen,check_count=ip_addresses.check_count+1,last_event_type=excluded.last_event_type,decision=excluded.decision`).bind(ip,c.code,c.name,now,now,event,decision||c.decision).run();
+ const legacyEvent=event==="login"?"login":"suspicious_access";
+ await env.SECURITY_DB.prepare(`INSERT INTO ip_addresses(ip_address,country_code,country_name,first_seen,last_seen,check_count,last_event_type,decision) VALUES(?,?,?,?,?,1,?,?) ON CONFLICT(ip_address) DO UPDATE SET country_code=excluded.country_code,country_name=excluded.country_name,last_seen=excluded.last_seen,check_count=ip_addresses.check_count+1,last_event_type=excluded.last_event_type,decision=excluded.decision`).bind(ip,c.code,c.name,now,now,legacyEvent,decision||c.decision).run();
 }
 async function getIpOverride(env,ip){try{return (await env.SECURITY_DB.prepare("SELECT decision FROM security_ip_overrides WHERE ip_address=?").bind(ip).first())?.decision||null}catch{return null}}
 async function isDeviceBlocked(env,id){if(!id)return false;try{return !!(await env.SECURITY_DB.prepare("SELECT device_id FROM security_devices WHERE device_id=? AND blocked=1").bind(id).first())}catch{return false}}
