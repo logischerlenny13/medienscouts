@@ -10,7 +10,7 @@ async function verifyFirebaseUser(request){
  const lookup=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idToken:m[1]})});
  if(!lookup.ok)return null;const user=(await lookup.json()).users?.[0];if(!user?.localId)return null;
  const url=`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${encodeURIComponent(user.localId)}`;
- const pr=await fetch(url,{headers:{Authorization:`Bearer ${m[1]}`}});if(!pr.ok)return null;const p=await pr.json();
+ const pr=await fetch(url,{headers:{Authorization:`Bearer ${m[1]}`}});const p=pr.ok?await pr.json():{fields:{}};
  return{uid:user.localId,email:user.email||"",name:p.fields?.name?.stringValue||user.displayName||user.email||"Unbekannt",role:p.fields?.role?.stringValue||"Schüler"};
 }
 async function upsertLegacy(env,r,event,decision){
