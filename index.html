@@ -135,6 +135,7 @@ onAuthStateChanged(auth,async u=>{
     w('applications','apps','createdAt');
     w('users','users');
     w('feedback','feedbackItems','createdAt');
+    if(p.role==='Admin')loadSecurityIPs();
   }
   render();
 });
