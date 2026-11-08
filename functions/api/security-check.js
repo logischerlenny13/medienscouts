@@ -34,10 +34,14 @@ export async function onRequestGet({request,env}){
   const u=await admin(request);if(!u)return json({error:"Nicht autorisiert"},403);
   try{
    const events=await env.SECURITY_DB.prepare("SELECT id,ip_address,country_code,country_name,uid,email,account_name,event_type,decision,device_id,created_at FROM security_events ORDER BY created_at DESC LIMIT 500").all();
+   const legacy=await env.SECURITY_DB.prepare("SELECT ip_address,country_code,country_name,first_seen,last_seen,check_count,last_event_type,decision FROM ip_addresses ORDER BY last_seen DESC").all();
+   const currentItems=events.results||[];
+   const seenIps=new Set(currentItems.map(x=>x.ip_address));
+   const legacyItems=(legacy.results||[]).filter(x=>!seenIps.has(x.ip_address)).map(x=>({...x,created_at:x.last_seen,event_type:x.last_event_type,account_name:"Noch keine Account-Zuordnung"}));
    const ips=await env.SECURITY_DB.prepare("SELECT ip_address,decision,updated_at FROM security_ip_overrides").all();
    const accounts=await env.SECURITY_DB.prepare("SELECT uid,email,account_name,reason,updated_at FROM security_account_blocks").all();
    const devices=await env.SECURITY_DB.prepare("SELECT device_id,reason,updated_at FROM security_devices WHERE blocked=1").all();
-   return json({items:events.results||[],overrides:ips.results||[],blockedAccounts:accounts.results||[],blockedDevices:devices.results||[]});
+   return json({items:[...currentItems,...legacyItems].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||""))).slice(0,500),overrides:ips.results||[],blockedAccounts:accounts.results||[],blockedDevices:devices.results||[]});
   }catch(e){
    const old=await env.SECURITY_DB.prepare("SELECT ip_address,country_code,country_name,first_seen,last_seen,check_count,last_event_type,decision FROM ip_addresses ORDER BY last_seen DESC").all();
    return json({items:(old.results||[]).map(x=>({...x,created_at:x.last_seen,event_type:x.last_event_type,account_name:"Noch keine Account-Zuordnung"})),setupRequired:true});
