@@ -111,7 +111,7 @@ DB.watch('surveys',d=>{S.surveys=d;render()},'createdAt');
 onAuthStateChanged(auth,async u=>{
   S.unsubs.forEach(f=>f());S.unsubs=[];
   if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';
-    try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}clearSecurityBlock()}catch(e){console.warn('Sicherheitsprüfung nicht erreichbar:',e)}
+    try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}clearSecurityBlock()}catch(e){console.error('Sicherheitsprüfung nicht erreichbar:',e);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte versuche es später erneut.');return}
     render();return}
   try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);await signOut(auth);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung konnte nicht durchgeführt werden. Bitte versuche es später erneut.');return}
   let p=await DB.get('users',u.uid);
@@ -1627,7 +1627,9 @@ window.setup=async()=>{
   }catch(e){toast('Fehler: '+e.code)}
 };
 
+setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(!res.ok){const info=await res.json().catch(()=>({}));await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.')}}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen:',e)}},30000);
 Object.assign(window,{S,DB,val,render});
+const appRoot=document.getElementById('app');if(appRoot)appRoot.style.display='none';
 render();
 </script>
 </body>
