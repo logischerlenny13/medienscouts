@@ -14,13 +14,13 @@ async function verifyFirebaseUser(request){
  return{uid:user.localId,email:user.email||"",name:p.fields?.name?.stringValue||user.displayName||user.email||"Unbekannt",role:p.fields?.role?.stringValue||"Schüler"};
 }
 async function upsertLegacy(env,r,event,decision){
- const ip=requestIp(r);if(ip==="unknown")return;await env.SECURITY_DB.prepare("DELETE FROM ip_addresses WHERE julianday(last_seen) < julianday('now', '-90 days')").run();
+ const ip=requestIp(r);if(ip==="unknown")throw new Error("Cloudflare hat keine Client-IP übermittelt.");await env.SECURITY_DB.prepare("DELETE FROM ip_addresses WHERE julianday(last_seen) < julianday('now', '-90 days')").run();
  const c=countryInfo(r),now=new Date().toISOString();
  const legacyEvent=event==="login"?"login":"suspicious_access";
  await env.SECURITY_DB.prepare(`INSERT INTO ip_addresses(ip_address,country_code,country_name,first_seen,last_seen,check_count,last_event_type,decision) VALUES(?,?,?,?,?,1,?,?) ON CONFLICT(ip_address) DO UPDATE SET country_code=excluded.country_code,country_name=excluded.country_name,last_seen=excluded.last_seen,check_count=ip_addresses.check_count+1,last_event_type=excluded.last_event_type,decision=excluded.decision`).bind(ip,c.code,c.name,now,now,legacyEvent,decision||c.decision).run();
 }
-async function getIpOverride(env,ip){try{return (await env.SECURITY_DB.prepare("SELECT decision FROM security_ip_overrides WHERE ip_address=?").bind(ip).first())?.decision||null}catch{return null}}
-async function isDeviceBlocked(env,id){if(!id)return false;try{return !!(await env.SECURITY_DB.prepare("SELECT device_id FROM security_devices WHERE device_id=? AND blocked=1").bind(id).first())}catch{return false}}
+async function getIpOverride(env,ip){return (await env.SECURITY_DB.prepare("SELECT decision FROM security_ip_overrides WHERE ip_address=?").bind(ip).first())?.decision||null}
+async function isDeviceBlocked(env,id){if(!id)return false;return !!(await env.SECURITY_DB.prepare("SELECT device_id FROM security_devices WHERE device_id=? AND blocked=1").bind(id).first())}
 async function logEvent(env,r,user,event,decision,deviceId){
  const ip=requestIp(r),c=countryInfo(r),now=new Date().toISOString();
  try{
@@ -65,21 +65,21 @@ export async function onRequestGet({request,env}){
   try{
    const blocked=await env.SECURITY_DB.prepare("SELECT uid FROM security_account_blocks WHERE uid=?").bind(sessionUser.uid).first();
    if(blocked)return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"account_blocked",error:"Dieser Account wurde durch die Administration gesperrt."},403);
-  }catch(e){console.error("Account-Sperrprüfung fehlgeschlagen:",e);return json({error:"Sicherheitsprüfung derzeit nicht möglich. Bitte später erneut versuchen."},503)}
+  }catch(e){console.error("Account-Sperrprüfung fehlgeschlagen:",e);return json({error:"Sicherheitsprüfung derzeit nicht möglich. Bitte später erneut versuchen.",status:"security_unavailable"},503)}
  }
  if(override==="blocked"||deviceBlocked){
-  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
+  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error("Gesperrter Zugriff konnte nicht protokolliert werden:",e)}
   return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",error:"Dieser Zugriff wurde gesperrt."},403);
  }
  if(override==="allowed"){
-  try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit","allowed",deviceId)}catch(e){console.error(e)}
+  try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit","allowed",deviceId)}catch(e){console.error("Sicherheitsereignis konnte nicht gespeichert werden:",e);return json({error:"Sicherheitsprotokoll derzeit nicht verfügbar. Zugriff wurde vorsorglich nicht freigegeben.",status:"security_unavailable"},503)}
   return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
  }
  if(c.decision==="blocked"){
-  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
+  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error("Gesperrter Länderzugriff konnte nicht protokolliert werden:",e)}
   return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled",error:"Zugriff aus "+c.name+" ist nicht erlaubt."},403);
  }
- try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit",c.decision,deviceId)}catch(e){console.error(e)}
+ try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit",c.decision,deviceId)}catch(e){console.error("Sicherheitsereignis konnte nicht gespeichert werden:",e);return json({error:"Sicherheitsprotokoll derzeit nicht verfügbar. Zugriff wurde vorsorglich nicht freigegeben.",status:"security_unavailable"},503)}
  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:c.decision,enforcement:"enabled"});
 }
 export async function onRequestPost({request,env}){
@@ -109,13 +109,15 @@ export async function onRequestPost({request,env}){
    return json({ok:true});
   }catch(e){console.error("Sicherheitsaktion fehlgeschlagen:",e);return json({error:"Datenbanktabellen fehlen noch oder Aktion fehlgeschlagen: "+e.message},503)}
  }
- const ip=requestIp(request),override=await getIpOverride(env,ip),c=countryInfo(request);
- if(override==="blocked"||await isDeviceBlocked(env,deviceId)){try{await logEvent(env,request,user,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}return json({error:"Dieser Zugriff wurde gesperrt.",country:c.code,countryName:c.name},403)}
- if(c.decision==="blocked"&&override!=="allowed"){try{await logEvent(env,request,user,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}return json({error:"Ungewöhnlicher Zugriff aus "+c.name+". Dieser Zugriff ist nicht erlaubt.",country:c.code,countryName:c.name},403)}
+ const ip=requestIp(request),c=countryInfo(request);
+ let override,deviceBlocked;
+ try{override=await getIpOverride(env,ip);deviceBlocked=await isDeviceBlocked(env,deviceId)}catch(e){console.error("IP-/Geräteprüfung fehlgeschlagen:",e);return json({error:"Sicherheitsdatenbank derzeit nicht erreichbar. Anmeldung wurde nicht freigegeben.",status:"security_unavailable"},503)}
+ if(override==="blocked"||deviceBlocked){try{await logEvent(env,request,user,"suspicious_access","blocked",deviceId)}catch(e){console.error("Gesperrter Zugriff konnte nicht protokolliert werden:",e)}return json({error:"Dieser Zugriff wurde gesperrt.",country:c.code,countryName:c.name,blocked:true,status:"blocked"},403)}
+ if(c.decision==="blocked"&&override!=="allowed"){try{await logEvent(env,request,user,"suspicious_access","blocked",deviceId)}catch(e){console.error("Gesperrter Länderzugriff konnte nicht protokolliert werden:",e)}return json({error:"Ungewöhnlicher Zugriff aus "+c.name+". Dieser Zugriff ist nicht erlaubt.",country:c.code,countryName:c.name,blocked:true,status:"blocked"},403)}
  try{
   const blocked=await env.SECURITY_DB.prepare("SELECT uid FROM security_account_blocks WHERE uid=?").bind(user.uid).first();
   if(blocked)return json({error:"Dieser Account wurde durch die Administration gesperrt.",status:"account_blocked",country:c.code,countryName:c.name},403);
  }catch(e){console.error("Account-Sperrprüfung fehlgeschlagen:",e);return json({error:"Sicherheitsprüfung derzeit nicht möglich. Bitte später erneut versuchen."},503)}
- await logEvent(env,request,user,"login",override==="allowed"?"allowed":c.decision,deviceId);
- return json({ok:true,status:override==="allowed"?"allowed":c.decision});
+ try{await logEvent(env,request,user,"login",override==="allowed"?"allowed":c.decision,deviceId)}catch(e){console.error("Login konnte nicht protokolliert werden:",e);return json({error:"Login wurde nicht freigegeben, weil das Sicherheitsprotokoll nicht gespeichert werden konnte.",status:"security_unavailable"},503)}
+ return json({ok:true,status:override==="allowed"?"allowed":c.decision,country:c.code,countryName:c.name});
 }
