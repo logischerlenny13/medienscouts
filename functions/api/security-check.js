@@ -72,6 +72,7 @@ export async function onRequestGet({request,env}){
   return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",error:"Dieser Zugriff wurde gesperrt."},403);
  }
  if(override==="allowed"){
+  if(url.searchParams.get("heartbeat")==="1")return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
   try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit","allowed",deviceId)}catch(e){console.error("Sicherheitsereignis konnte nicht gespeichert werden:",e);return json({error:"Sicherheitsprotokoll derzeit nicht verfügbar. Zugriff wurde vorsorglich nicht freigegeben.",status:"security_unavailable"},503)}
   return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
  }
@@ -79,6 +80,7 @@ export async function onRequestGet({request,env}){
   try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error("Gesperrter Länderzugriff konnte nicht protokolliert werden:",e)}
   return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled",error:"Zugriff aus "+c.name+" ist nicht erlaubt."},403);
  }
+ if(url.searchParams.get("heartbeat")==="1")return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:c.decision,enforcement:"enabled"});
  try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit",c.decision,deviceId)}catch(e){console.error("Sicherheitsereignis konnte nicht gespeichert werden:",e);return json({error:"Sicherheitsprotokoll derzeit nicht verfügbar. Zugriff wurde vorsorglich nicht freigegeben.",status:"security_unavailable"},503)}
  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:c.decision,enforcement:"enabled"});
 }
