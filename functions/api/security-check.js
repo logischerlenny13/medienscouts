@@ -61,25 +61,25 @@ export async function onRequestGet({request,env}){
  const sessionUser=await verifyFirebaseUser(request);
  const override=await getIpOverride(env,ip),c=countryInfo(request);
  const deviceBlocked=await isDeviceBlocked(env,deviceId);
- if(override==="blocked"||deviceBlocked){
-  try{await logEvent(env,request,null,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
-  return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled"},403);
- }
- if(override==="allowed"){
-  try{await logEvent(env,request,null,"anonymous_visit","allowed",deviceId)}catch(e){console.error(e)}
-  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
- }
- if(c.decision==="blocked"){
-  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
-  return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled",error:"Zugriff aus "+c.name+" ist nicht erlaubt."},403);
- }
  if(sessionUser){
   try{
    const blocked=await env.SECURITY_DB.prepare("SELECT uid FROM security_account_blocks WHERE uid=?").bind(sessionUser.uid).first();
    if(blocked)return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"account_blocked",error:"Dieser Account wurde durch die Administration gesperrt."},403);
   }catch(e){console.error("Account-Sperrprüfung fehlgeschlagen:",e);return json({error:"Sicherheitsprüfung derzeit nicht möglich. Bitte später erneut versuchen."},503)}
  }
- try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit",override==="allowed"?"allowed":c.decision,deviceId)}catch(e){console.error(e)}
+ if(override==="blocked"||deviceBlocked){
+  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
+  return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",error:"Dieser Zugriff wurde gesperrt."},403);
+ }
+ if(override==="allowed"){
+  try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit","allowed",deviceId)}catch(e){console.error(e)}
+  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:"allowed",manualOverride:true});
+ }
+ if(c.decision==="blocked"){
+  try{await logEvent(env,request,sessionUser,"suspicious_access","blocked",deviceId)}catch(e){console.error(e)}
+  return json({country:c.code,countryName:c.name,allowed:false,blocked:true,status:"blocked",enforcement:"enabled",error:"Zugriff aus "+c.name+" ist nicht erlaubt."},403);
+ }
+ try{await logEvent(env,request,sessionUser,sessionUser?"session_check":"anonymous_visit",c.decision,deviceId)}catch(e){console.error(e)}
  return json({country:c.code,countryName:c.name,allowed:true,blocked:false,status:c.decision,enforcement:"enabled"});
 }
 export async function onRequestPost({request,env}){
