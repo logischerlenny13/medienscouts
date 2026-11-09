@@ -1199,7 +1199,7 @@ window.sendAutomaticMail=async(type,id)=>{
 window.saveMailTemplate=async type=>{
   if(S.user?.role!=='Admin')return toast('Nur Admins dürfen Mailvorlagen bearbeiten.');
   const t={to:val('mail-'+type+'-to'),subject:val('mail-'+type+'-subject'),body:$('#mail-'+type+'-body')?.value||'',html:$('#mail-'+type+'-html')?.value||''};
-  if(!/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(t.to))return toast('Bitte eine gültige Lehrkraft-E-Mail-Adresse eintragen.');
+  if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(t.to))return toast('Bitte eine gültige E-Mail-Adresse eintragen.');
   if(!t.subject.trim()||!t.body.trim()||!t.html.trim())return toast('Betreff, Text und HTML-Design müssen ausgefüllt sein.');
   const mailTemplates={...(S.settings.mailTemplates||{}),[type]:t};
   await DB.set('settings','main',{...S.settings,setupDone:true,mailTemplates});
