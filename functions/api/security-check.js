@@ -95,7 +95,15 @@ export async function onRequestPost({request,env}){
   const actor=await admin(request);if(!actor)return json({error:"Nur Admins dürfen Sicherheitsmaßnahmen ändern"},403);
   const ip=String(body.ip||""),uid=String(body.uid||""),did=String(body.targetDeviceId||"");
   try{
-   if(body.action==="allow_ip"||body.action==="block_ip"){
+   if(body.action==="clear_ips"){
+    // Nur IP-bezogene Daten entfernen. Account- und Geräte-Sperren
+    // bleiben bestehen, da sie unabhängig von IP-Adressen verwaltet werden.
+    await env.SECURITY_DB.batch([
+     env.SECURITY_DB.prepare("DELETE FROM security_events"),
+     env.SECURITY_DB.prepare("DELETE FROM ip_addresses"),
+     env.SECURITY_DB.prepare("DELETE FROM security_ip_overrides")
+    ]);
+   }else if(body.action==="allow_ip"||body.action==="block_ip"){
     if(!ip||ip.length>64)return json({error:"Ungültige IP-Adresse"},400);
     await env.SECURITY_DB.prepare("INSERT INTO security_ip_overrides(ip_address,decision,updated_at,updated_by) VALUES(?,?,?,?) ON CONFLICT(ip_address) DO UPDATE SET decision=excluded.decision,updated_at=excluded.updated_at,updated_by=excluded.updated_by").bind(ip,body.action==="allow_ip"?"allowed":"blocked",new Date().toISOString(),actor.uid).run();
    }else if(body.action==="unban_ip"){
