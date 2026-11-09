@@ -1196,23 +1196,30 @@ window.sendAutomaticMail=async(type,id)=>{
     if(!res.ok||!data.success)console.warn('Automatische Mail nicht versendet:',data.error||res.status);
   }catch(e){console.warn('Automatische Mail konnte nicht versendet werden:',e)}
 };
-window.saveMailTemplate=async type=>{
+window.mailEditorValues=key=>({to:val('mail-'+key+'-to'),subject:val('mail-'+key+'-subject'),body:$('#mail-'+key+'-body')?.value||'',html:$('#mail-'+key+'-html')?.value||''});
+window.saveMailTemplate=async(type,key=type)=>{
   if(S.user?.role!=='Admin')return toast('Nur Admins dürfen Mailvorlagen bearbeiten.');
-  const t={to:val('mail-'+type+'-to'),subject:val('mail-'+type+'-subject'),body:$('#mail-'+type+'-body')?.value||'',html:$('#mail-'+type+'-html')?.value||''};
-  if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(t.to))return toast('Bitte eine gültige E-Mail-Adresse eintragen.');
+  const t=window.mailEditorValues(key);
+  if(!/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(t.to))return toast('Bitte eine gültige E-Mail-Adresse eintragen.');
   if(!t.subject.trim()||!t.body.trim()||!t.html.trim())return toast('Betreff, Text und HTML-Design müssen ausgefüllt sein.');
-  const mailTemplates={...(S.settings.mailTemplates||{}),[type]:t};
+  const mailTemplates={...(S.settings.mailTemplates||{})};
+  if(type==='passwordReset'){
+    const platform=$('#mail-editor-'+key)?.dataset.platform;
+    if(!platform)return toast('Die zugehörige App konnte nicht erkannt werden.');
+    mailTemplates.passwordResetByPlatform={...(mailTemplates.passwordResetByPlatform||{}),[platform]:t};
+  }else mailTemplates[type]=t;
   await DB.set('settings','main',{...S.settings,setupDone:true,mailTemplates});
   toast('E-Mail-Vorlage gespeichert.');
 };
-window.previewMailTemplate=type=>{
-  const t={subject:val('mail-'+type+'-subject'),body:$('#mail-'+type+'-body')?.value||'',html:$('#mail-'+type+'-html')?.value||''};
+window.previewMailTemplate=(type,key=type)=>{
+  const t=window.mailEditorValues(key);
   const sample=t.html.replaceAll('{student}','Max Mustermann').replaceAll('{platform}','Untis').replaceAll('{class}','Klasse 8').replaceAll('{motivation}','Ich möchte anderen Schülern bei digitalen Fragen helfen.');
   modal('<div class="space-y-3"><div class="flex justify-between items-center"><h2 class="font-bold">E-Mail-Vorschau</h2><button class="btn2" onclick="closeModal()">Schließen</button></div><div class="text-sm"><b>Betreff:</b> '+esc(t.subject)+'</div><div class="rounded-xl bg-white p-3 text-slate-900"><iframe title="Mailvorschau" sandbox="" class="w-full min-h-[360px]" srcdoc="'+esc(sample)+'"></iframe></div></div>');
 };
-window.testMailTemplate=async type=>{
+window.testMailTemplate=async(type,key=type)=>{
   if(S.user?.role!=='Admin'||!auth.currentUser)return toast('Nur Admins dürfen Testmails versenden.');
-  const t={to:val('mail-'+type+'-to'),subject:val('mail-'+type+'-subject'),message:$('#mail-'+type+'-body')?.value||'',htmlBody:$('#mail-'+type+'-html')?.value||''};
+  const values=window.mailEditorValues(key);
+  const t={to:values.to,subject:values.subject,message:values.body,htmlBody:values.html};
   if(!t.to||!t.subject||!t.message||!t.htmlBody)return toast('Bitte die Vorlage vollständig ausfüllen.');
   if(!confirm('Eine Testmail an '+t.to+' senden?'))return;
   try{
@@ -1243,18 +1250,25 @@ function mailTemplateDefaults(type){
     : {to:'',subject:'Neue Bewerbung als Medienscout',body:'Eine neue Bewerbung ist eingegangen.\n\nName: {student}\nKlasse: {class}\nMotivation: {motivation}',html:'<div style="font-family:Arial,sans-serif;color:#172033;max-width:600px;margin:auto;padding:24px"><h2 style="color:#059669">Neue Medienscout-Bewerbung</h2><p><b>{student}</b> aus <b>{class}</b> hat sich beworben.</p><p>{motivation}</p></div>'};
 }
 function mailTemplate(type){return S.settings.mailTemplates?.[type]||mailTemplateDefaults(type)}
+function mailTemplateForPlatform(platform){
+  return S.settings.mailTemplates?.passwordResetByPlatform?.[platform]
+    || S.settings.mailTemplates?.passwordReset
+    || mailTemplateDefaults('passwordReset');
+}
 function mailAdminView(){
-  const p=mailTemplate('passwordReset'),a=mailTemplate('application');
-  const editor=(type,t,label)=>`<section class="glass p-5 space-y-3"><h3 class="font-bold">${label}</h3>
-    <label class="block text-xs opacity-70">E-Mail-Adresse der zuständigen Lehrkraft</label><input id="mail-${type}-to" class="inp" type="email" value="${esc(t.to)}" placeholder="lehrkraft@schule.de">
-    <label class="block text-xs opacity-70">Betreff</label><input id="mail-${type}-subject" class="inp" value="${esc(t.subject)}">
-    <label class="block text-xs opacity-70">Nachricht (Textversion)</label><textarea id="mail-${type}-body" rows="4" class="inp">${esc(t.body)}</textarea>
-    <label class="block text-xs opacity-70">HTML-Design (für Farben, Bilder und Layout)</label><textarea id="mail-${type}-html" rows="7" class="inp font-mono text-xs">${esc(t.html)}</textarea>
+  const a=mailTemplate('application');
+  const editor=(type,t,label,key=type,platform='')=>`<section id="mail-editor-${key}" data-platform="${esc(platform)}" class="glass p-5 space-y-3"><h3 class="font-bold">${label}</h3>
+    <label class="block text-xs opacity-70">E-Mail-Adresse der zuständigen Lehrkraft</label><input id="mail-${key}-to" class="inp" type="email" value="${esc(t.to)}" placeholder="lehrkraft@schule.de">
+    <label class="block text-xs opacity-70">Betreff</label><input id="mail-${key}-subject" class="inp" value="${esc(t.subject)}">
+    <label class="block text-xs opacity-70">Nachricht (Textversion)</label><textarea id="mail-${key}-body" rows="4" class="inp">${esc(t.body)}</textarea>
+    <label class="block text-xs opacity-70">HTML-Design (für Farben, Bilder und Layout)</label><textarea id="mail-${key}-html" rows="7" class="inp font-mono text-xs">${esc(t.html)}</textarea>
     <p class="text-xs opacity-60">Platzhalter: {student}, {platform}, {class}, {motivation}. HTML darf Inline-CSS verwenden.</p>
-    <div class="flex flex-wrap gap-2"><button class="btn" onclick="saveMailTemplate('${type}')">Vorlage speichern</button><button class="btn2" onclick="previewMailTemplate('${type}')">Vorschau</button><button class="btn2" onclick="testMailTemplate('${type}')">Test an Lehrkraft</button></div>
+    <div class="flex flex-wrap gap-2"><button class="btn" onclick="saveMailTemplate('${type}','${key}')">Vorlage speichern</button><button class="btn2" onclick="previewMailTemplate('${type}','${key}')">Vorschau</button><button class="btn2" onclick="testMailTemplate('${type}','${key}')">Test an Lehrkraft</button></div>
   </section>`;
+  const platformEditors=passwordPlatforms().map((platform,index)=>editor('passwordReset',mailTemplateForPlatform(platform),'Passwort-Zurücksetzung · '+esc(platform),'passwordReset-'+index,platform)).join('');
   return `<div class="max-w-3xl space-y-4"><div class="glass p-4 text-sm">Automatischer Versand erfolgt ausschließlich bei Passwort-Zurücksetzungen und neuen Medienscout-Bewerbungen. Normale Support-Tickets lösen keine E-Mail aus.</div>
-    ${editor('passwordReset',p,'Passwort-Zurücksetzung')}
+    <section class="glass p-4 space-y-2"><h3 class="font-bold">Passwort-Zurücksetzungen nach App</h3><p class="text-sm opacity-70">Für jede App kannst du eine eigene zuständige Lehrkraft, einen eigenen Betreff und ein eigenes Mail-Design festlegen. Neue Apps aus der Plattformliste erscheinen hier automatisch.</p></section>
+    ${platformEditors}
     ${editor('application',a,'Medienscout-Bewerbung')}
     <section class="glass p-5 space-y-3"><h3 class="font-bold">Mailserver-Verbindung</h3><p class="text-sm opacity-70">Testet die bestehende Google-Mail-Verbindung an die E-Mail-Adresse des angemeldeten Admin-Kontos.</p><button class="btn2" onclick="sendTestMail()">Verbindungstest an mich</button></section>
   </div>`;
