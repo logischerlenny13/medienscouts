@@ -1200,7 +1200,7 @@ window.mailEditorValues=key=>({to:val('mail-'+key+'-to'),subject:val('mail-'+key
 window.saveMailTemplate=async(type,key=type)=>{
   if(S.user?.role!=='Admin')return toast('Nur Admins dürfen Mailvorlagen bearbeiten.');
   const t=window.mailEditorValues(key);
-  if(!/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(t.to))return toast('Bitte eine gültige E-Mail-Adresse eintragen.');
+  if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(t.to))return toast('Bitte eine gültige E-Mail-Adresse eintragen.');
   if(!t.subject.trim()||!t.body.trim()||!t.html.trim())return toast('Betreff, Text und HTML-Design müssen ausgefüllt sein.');
   const mailTemplates={...(S.settings.mailTemplates||{})};
   if(type==='passwordReset'){
