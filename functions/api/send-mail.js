@@ -78,10 +78,10 @@ export async function onRequestPost({ request, env }) {
   const subject = String(data.subject || "").trim();
   const message = String(data.message || "").trim();
 
-  if (!/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(to) || to.length > 254) {
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to) || to.length > 254) {
     return json({ success: false, error: "Empfänger-Adresse ist ungültig." }, 400);
   }
-  if (!subject || subject.length > 200 || /[\\r\\n]/.test(subject)) {
+  if (!subject || subject.length > 200 || /[\r\n]/.test(subject)) {
     return json({ success: false, error: "Betreff ist ungültig." }, 400);
   }
   if (!message || message.length > 10000) {
