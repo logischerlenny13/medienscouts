@@ -1061,9 +1061,10 @@ const TABS=[
   ['board','pin','Schwarzes Brett'],
   ['apps','user-check','Bewerbungen'],
   ['team','users','Accounts & CSV-Import'],
+  ['mail','mail','E-Mail-System'],
   ['security','shield-check','Sicherheitsprotokoll']
 ];
-const ADMIN_ONLY_TABS=['pwset','claimed','security'];
+const ADMIN_ONLY_TABS=['pwset','claimed','security','mail'];
 
 window.switchAdminTab=(key)=>{
   if(!adminTabs[key])return toast('Dieser Admin-Bereich ist nicht verfügbar.');
@@ -1185,7 +1186,34 @@ function securityAdminView(){
   </div>`;
 }
 
+window.sendTestMail=async()=>{
+  if(S.user?.role!=='Admin'||!auth.currentUser)return toast('Nur angemeldete Admins dürfen den Mailtest ausführen.');
+  const to=String(S.user.email||auth.currentUser.email||'').trim();
+  if(!to)return toast('Für deinen Admin-Account ist keine E-Mail-Adresse hinterlegt.');
+  if(!confirm('Eine Testmail an '+to+' senden?'))return;
+  try{
+    const token=await auth.currentUser.getIdToken();
+    const res=await fetch('/api/send-mail',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({to,subject:'Medienscouts – erfolgreicher Mailtest',message:'Dies ist eine Testmail des Medienscouts-Mailservers. Wenn du diese Nachricht erhältst, funktioniert der Versand grundsätzlich.'})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok||!data.success)throw new Error(data.error||'Der Mailtest ist fehlgeschlagen.');
+    toast('Testmail wurde an '+to+' übergeben. Bitte Posteingang und Spam prüfen.');
+  }catch(error){console.error('Mailtest fehlgeschlagen:',error);toast('Mailtest fehlgeschlagen: '+(error.message||'Unbekannter Fehler'));}
+};
+
+function mailAdminView(){
+  return `<div class="max-w-2xl space-y-4">
+    <div class="glass p-5 space-y-3">
+      <h3 class="font-bold text-base">E-Mail-System · Verbindungstest</h3>
+      <p class="text-sm opacity-75">Mit dem Test wird genau eine E-Mail an die Adresse deines aktuell angemeldeten Admin-Kontos gesendet. Empfänger können hier nicht frei eingegeben werden.</p>
+      <div class="rounded-xl bg-slate-500/10 p-3 text-sm"><span class="opacity-70">Testempfänger:</span><br><b>${esc(S.user?.email||auth.currentUser?.email||'Keine E-Mail-Adresse hinterlegt')}</b></div>
+      <button class="btn" onclick="sendTestMail()"><i data-lucide="send" class="w-4 h-4"></i>Testmail an mich senden</button>
+    </div>
+    <p class="text-xs opacity-65">Der automatische Versand für neue, ungeclaimte oder Passwort-Tickets bleibt bis zur vollständigen Einrichtung und Prüfung deaktiviert.</p>
+  </div>`;
+}
+
 const adminTabs={
+  mail:()=>mailAdminView(),
   security:()=>securityAdminView(),
   settings:()=>`<div class="grid md:grid-cols-2 gap-6">
     <div class="space-y-3">
