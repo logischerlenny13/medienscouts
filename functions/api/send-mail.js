@@ -68,7 +68,7 @@ export async function onRequestPost({ request, env }) {
   let data;
   try {
     const raw = await request.text();
-    if (raw.length > 12000) return json({ success: false, error: "Anfrage ist zu groß." }, 413);
+    if (raw.length > 30000) return json({ success: false, error: "Anfrage ist zu groß." }, 413);
     data = JSON.parse(raw);
   } catch {
     return json({ success: false, error: "Ungültige Anfrage." }, 400);
@@ -77,6 +77,7 @@ export async function onRequestPost({ request, env }) {
   const to = String(data.to || "").trim();
   const subject = String(data.subject || "").trim();
   const message = String(data.message || "").trim();
+  const htmlBody = String(data.htmlBody || "").trim();
 
   if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to) || to.length > 254) {
     return json({ success: false, error: "Empfänger-Adresse ist ungültig." }, 400);
@@ -84,7 +85,7 @@ export async function onRequestPost({ request, env }) {
   if (!subject || subject.length > 200 || /[\r\n]/.test(subject)) {
     return json({ success: false, error: "Betreff ist ungültig." }, 400);
   }
-  if (!message || message.length > 10000) {
+  if (!message || message.length > 10000 || htmlBody.length > 20000) {
     return json({ success: false, error: "Nachricht fehlt oder ist zu lang." }, 400);
   }
 
@@ -96,7 +97,8 @@ export async function onRequestPost({ request, env }) {
         secret: env.MAIL_API_SECRET,
         to,
         subject,
-        message
+        message,
+        htmlBody
       }),
       redirect: "follow"
     });
