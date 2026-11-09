@@ -98,7 +98,8 @@ export async function onRequestPost({ request, env }) {
         to,
         subject,
         message,
-        htmlBody
+        htmlBody,
+        requestId: String(data.requestId || "").slice(0,200)
       }),
       redirect: "follow"
     });
