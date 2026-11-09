@@ -26,11 +26,15 @@
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail,setPersistence,indexedDBLocalPersistence,browserLocalPersistence} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where,Timestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
 const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
+// Dauerhaft angemeldet bleiben: Speicher fest auf "lokal" stellen und vom Browser als dauerhaft anfordern
+setPersistence(auth,indexedDBLocalPersistence).catch(()=>setPersistence(auth,browserLocalPersistence)).catch(()=>{});
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(_){}
+window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Fehler: '+(e.reason?.code||e.reason?.message||e.reason))});
 
 // ---------- Datenschicht ----------
 const DB={
@@ -113,7 +117,7 @@ onAuthStateChanged(auth,async u=>{
   if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';
     try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Sicherheitsprüfung nicht erreichbar:',e);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte versuche es später erneut.');return}
     render();return}
-  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(check.status===403&&info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');await signOut(auth);return}if(!check.ok){console.warn('Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen:',info);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.')}else if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.');}
+  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(check.status===403&&info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}if(!check.ok){console.warn('Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen:',info);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.')}else if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.');}
   let p=await DB.get('users',u.uid);
   if(!p){
     p={email:u.email,name:u.email.split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
@@ -149,7 +153,15 @@ function applyDesign(){
 }
 
 // ---------- Haupt-Rendering ----------
+document.addEventListener('click',e=>{
+  // iPad/iPhone: Eingabefeld behält sonst den Fokus und blockiert das Neuzeichnen -> Tasten wirken "tot"
+  const b=e.target.closest('#app button,#app [onclick]'),a=document.activeElement;
+  if(b&&a&&a!==b&&['INPUT','TEXTAREA','SELECT'].includes(a.tagName)&&!(a.id||'').startsWith('s-')&&a.closest('#app'))a.blur();
+},true);
 function render(force=false){
+  try{renderInner(force)}catch(err){console.error('Anzeigefehler:',err);toast('Anzeigefehler: '+(err.message||err))}
+}
+function renderInner(force=false){
   const ae=document.activeElement;
   if(!force&&ae&&ae.tagName!='BODY'&&ae.closest('#app')&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)&&!ae.id.startsWith('s-'))return;
   const fid=ae&&ae.id&&ae.id.startsWith('s-')&&ae.closest('#app')?ae.id:null,pos=fid?ae.selectionStart:0;
@@ -248,7 +260,7 @@ function homeView(){
   const empty=t=>`<div class="card2 opacity-70 md:col-span-2">${t}</div>`;
   const more=[['surveys','Umfragen','surveys'],['activityOverview','Aktivität','activity'],['helpCenter','Hilfe-Center','help'],['privateMessages','Nachrichten','privateMessages']].filter(([k])=>S.settings[k]).map(([k,l,v])=>`<button class="chip" onclick="${v==='surveys'?"S.activeSurveyId=null;":''}${v==='privateMessages'&&!S.user?"openAuth('login')":`S.view='${v}';render()`}">${l}</button>`).join('');
   return `<div class="space-y-4 max-w-[1800px] mx-auto">
-    ${S.settings.board&&S.boardItems.length&&!searching?`<section class="panel"><h2 class="ptitle !cursor-default">Aktuelles</h2><div class="grid md:grid-cols-2 gap-4">${S.boardItems.slice(0,4).map(b=>`<div class="card2"><div class="text-xs opacity-60">${esc(b.type)} · ${fmt(b.createdAt)}</div><b class="text-lg">${esc(b.title)}</b><p class="opacity-80 mt-1">${esc(b.text)}</p></div>`).join('')}</div></section>`:''}
+    ${S.settings.board&&S.boardItems.length&&!searching?`<section class="panel"><h2 class="ptitle !cursor-default">Aktuelles</h2><div class="grid md:grid-cols-2 gap-4">${S.boardItems.slice(0,4).map(b=>`<div class="card2"><div class="text-xs opacity-60">${esc(b.type)} · ${fmt(b.createdAt)}</div><b class="text-lg">${esc(b.title)}</b><p class="opacity-80 mt-1">${esc(b.text)}</p>${b.img?`<img src="${b.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 mx-auto cursor-zoom-in" alt="">`:''}</div>`).join('')}</div></section>`:''}
     <section class="panel">${head('Anleitungen','articles')}<div class="grid md:grid-cols-2 gap-4">${arts.map(a=>mediaCard('articles',a)).join('')||empty(searching?'Keine passenden Anleitungen gefunden.':'Noch keine angepinnten Anleitungen.')}</div></section>
     <section class="panel">${head('Erklärvideos','videos')}<div class="grid md:grid-cols-2 gap-4">${vids.map(v=>mediaCard('videos',v)).join('')||empty(searching?'Keine passenden Videos gefunden.':'Noch keine angepinnten Videos.')}</div></section>
     ${more&&!searching?`<section class="panel flex flex-wrap justify-center gap-3">${more}</section>`:''}
@@ -1140,6 +1152,15 @@ window.loadSecurityIPs=async()=>{
   }catch(e){toast('IP-Liste konnte nicht geladen werden: '+e.message)}
   finally{S.securityLoading=false;render()}
 };
+window.clearSecurityLog=async()=>{
+  if(!confirm('Wirklich ALLE gespeicherten IP-Adressen und Zugriffe löschen? Das kann nicht rückgängig gemacht werden.'))return;
+  try{
+    const token=await auth.currentUser.getIdToken();
+    const res=await fetch('/api/security-check',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({action:'clear_ips'})});
+    const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||'Löschen fehlgeschlagen (Cloudflare-Funktion kennt "clear_ips" noch nicht?)');
+    S.securityIPs=[];S.securityAlertCount=0;toast('Alle IP-Adressen wurden gelöscht.');loadSecurityIPs();
+  }catch(e){toast(e.message)}
+};
 window.securityAction=async(action,values={})=>{
   if(!confirm('Sicherheitsaktion wirklich ausführen?'))return;
   try{
@@ -1155,7 +1176,7 @@ function securityAdminView(){
   const overrides=S.securityOverrides||[],blocked=S.securityBlockedAccounts||[];
   const ipState=ip=>overrides.find(x=>x.ip_address===ip)?.decision;
   return `<div class="space-y-4">
-    <div class="glass p-4 flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-bold">IP-Adressen & Sicherheitsprotokoll</h3><p class="text-xs opacity-70 mt-1">Account-Zuordnung bei Anmeldung; ohne Anmeldung wird der Zugriff als anonym protokolliert.</p></div><button class="btn" onclick="loadSecurityIPs()" ${S.securityLoading?'disabled':''}>${S.securityLoading?'Lädt…':'Aktualisieren'}</button></div>
+    <div class="glass p-4 flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-bold">IP-Adressen & Sicherheitsprotokoll</h3><p class="text-xs opacity-70 mt-1">Account-Zuordnung bei Anmeldung; ohne Anmeldung wird der Zugriff als anonym protokolliert.</p></div><div class="flex gap-2"><button class="btn2 !text-rose-500" onclick="clearSecurityLog()"><i data-lucide="trash-2" class="w-4 h-4"></i>Clean – alle IPs löschen</button><button class="btn" onclick="loadSecurityIPs()" ${S.securityLoading?'disabled':''}>${S.securityLoading?'Lädt…':'Aktualisieren'}</button></div></div>
     ${S.securitySetupRequired?'<div class="glass p-3 text-sm text-amber-600">Die zusätzlichen Sicherheits-Tabellen müssen noch in D1 angelegt werden. Bis dahin wird die bisherige IP-Liste angezeigt.</div>':''}
     <div class="glass p-4"><div class="font-semibold mb-2">Manuelle IP-Freigabe oder Sperre</div><div class="flex flex-wrap gap-2"><input id="security-ip-manual" class="inp flex-1 min-w-[180px]" placeholder="IP-Adresse"><button class="btn" onclick="securityAction('allow_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP freigeben</button><button class="btn2 !text-rose-500" onclick="securityAction('block_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP sperren</button></div></div>
     <div class="glass p-4"><div class="font-semibold mb-2">Gesperrte Accounts (${blocked.length})</div>${blocked.length?blocked.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t py-2 text-sm"><span><b>${esc(x.account_name||'Account')}</b> · ${esc(x.email||x.uid)}</span><button class="btn2" onclick="securityAction('unban_account',{uid:'${esc(x.uid)}'})">Entsperren</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Accounts.</p>'}<div class="font-semibold mt-4 mb-2">Gesperrte Geräte (${(S.securityBlockedDevices||[]).length})</div>${(S.securityBlockedDevices||[]).length?S.securityBlockedDevices.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t py-2 text-xs"><span class="font-mono">${esc(x.device_id)}</span><button class="btn2" onclick="securityAction('unban_device',{targetDeviceId:'${esc(x.device_id)}'})">Gerät freigeben</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Geräte.</p>'}</div>
@@ -1410,6 +1431,8 @@ const adminTabs={
       <select id="b-type" class="inp"><option>Fundsache</option><option>AG-News & Termine</option></select>
       <input id="b-title" class="inp" placeholder="Titel (z.B. AirPods in Raum 204 gefunden)">
       <textarea id="b-text" rows="3" class="inp" placeholder="Details zur Abholung oder zum Termin…"></textarea>
+      <div id="b-prev"></div>
+      <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Foto anhängen<input type="file" accept="image/*" hidden onchange="pick(this,'b-prev',900)"></label>
       <button class="btn w-full" onclick="saveBoardItem()">Veröffentlichen</button>
     </div>
     <div class="space-y-2 md:col-span-3">
@@ -1418,6 +1441,7 @@ const adminTabs={
           <span class="text-xs font-bold ${b.type=='Fundsache'?'text-amber-500':'text-emerald-500'}">${esc(b.type)}</span>
           <div class="font-bold text-sm">${esc(b.title)}</div>
           <div class="text-xs opacity-70">${esc(b.text)}</div>
+          ${b.img?`<img src="${b.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-32 cursor-zoom-in">`:''}
         </div>
         <button class="btn2 !text-rose-500" onclick="delItem('board','${b.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
       </div>`).join('')||`<div class="glass p-8 text-center opacity-60">Keine Einträge vorhanden.</div>`}
@@ -1557,10 +1581,11 @@ window.exportSurveyCsv=()=>{
 
 // ---------- Schwarzes Brett & CSV-Account-Import ----------
 window.saveBoardItem=async()=>{
-  const type=val('b-type'),title=val('b-title'),text=val('b-text');
+  const type=val('b-type'),title=val('b-title'),text=val('b-text'),img=pendingImg['b-prev']||null;
   if(!title||!text)return toast('Bitte Titel und Text eingeben.');
-  await DB.add('board',{type,title,text,createdAt:Date.now()});
-  toast('Am Schwarzen Brett veröffentlicht.');render();
+  try{await DB.add('board',{type,title,text,img,createdAt:Date.now()})}catch(e){return toast('Fehler beim Speichern: '+(e.code||e.message))}
+  pendingImg['b-prev']=null;
+  toast('Am Schwarzen Brett veröffentlicht.');render(true);
 };
 
 window.readCsvFile=inp=>{
@@ -1651,7 +1676,7 @@ window.setup=async()=>{
   }catch(e){toast('Fehler: '+e.code)}
 };
 
-setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?heartbeat=1&deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(res.status===403){const info=await res.json().catch(()=>({}));if(info.blocked){await signOut(auth);showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}}if(!res.ok)console.warn('Regelmäßige Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen.',res.status)}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen; Sitzung bleibt bestehen:',e)}},30000);
+setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?heartbeat=1&deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(res.status===403){const info=await res.json().catch(()=>({}));if(info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}}if(res.ok&&securityBlockSticky){securityBlockSticky=false;clearSecurityBlock()}if(!res.ok)console.warn('Regelmäßige Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen.',res.status)}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen; Sitzung bleibt bestehen:',e)}},30000);
 Object.assign(window,{S,DB,val,render});
 const appRoot=document.getElementById('app');if(appRoot)appRoot.style.display='none';
 render();
