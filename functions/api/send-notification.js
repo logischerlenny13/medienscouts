@@ -41,7 +41,9 @@ export async function onRequestPost({request,env}) {
     if(!record||record.uid!==uid) return json({success:false,error:"Eintrag nicht gefunden oder gehört nicht zu diesem Account."},403);
     if(type==="passwordReset"&&record.passwordReset!==true) return json({success:false,error:"Das ist keine Passwort-Zurücksetzung."},400);
     const settings=await readDoc("settings/main",match[1]);
-    const template=settings?.mailTemplates?.[type];
+    const template=type==="passwordReset"
+      ? (settings?.mailTemplates?.passwordResetByPlatform?.[record.passwordPlatform] || settings?.mailTemplates?.passwordReset)
+      : settings?.mailTemplates?.application;
     if(!template?.to||!template?.subject||!template?.body||!template?.html) return json({success:false,error:"Die E-Mail-Vorlage ist noch nicht vollständig eingerichtet."},503);
     const to=String(template.to).trim();
     if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to)||to.length>254) return json({success:false,error:"Die Empfängeradresse in den Einstellungen ist ungültig."},503);
