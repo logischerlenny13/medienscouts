@@ -1,0 +1,287 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myUserPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function hasUserProfile() {
+      return signedIn() && exists(myUserPath());
+    }
+
+    function myRole() {
+      return hasUserProfile() ? get(myUserPath()).data.get('role', 'Schüler') : 'Schüler';
+    }
+
+    function isAdmin() {
+      return hasUserProfile() && myRole() == 'Admin';
+    }
+
+    function isStaff() {
+      return hasUserProfile() && myRole() in ['Admin', 'Medienscout'];
+    }
+
+    function ownsTicket(ticket) {
+      return signedIn() && ticket.uid == request.auth.uid;
+    }
+
+    function scoutMayAccessTicket(ticket) {
+      return signedIn()
+        && myRole() == 'Medienscout'
+        && ticket.get('passwordReset', false) == false
+        && (ticket.get('assignedUid', null) == null
+            || ticket.get('assignedUid', null) == request.auth.uid);
+    }
+
+    function canReadTicket(ticket) {
+      return isAdmin() || ownsTicket(ticket) || scoutMayAccessTicket(ticket);
+    }
+
+    function validStudentTicketCreate() {
+      return signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.passwordReset is bool
+        && request.resource.data.passwordReset in [true, false]
+        && request.resource.data.status == 'Neu'
+        && request.resource.data.assignedUid == null
+        && request.resource.data.createdAt is number
+        && request.resource.data.updatedAt is number
+        && request.resource.data.keys().hasAll([
+          'uid', 'userName', 'userEmail', 'subject', 'category', 'status',
+          'assignedUid', 'assignedName', 'passwordReset', 'createdAt',
+          'updatedAt', 'unreadAdmin', 'unreadStudent'
+        ]);
+    }
+
+    function studentMayUpdateOwnTicket() {
+      return ownsTicket(resource.data)
+        && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadStudent'])
+          ||
+          (
+            resource.data.get('passwordReset', false) == true
+            && resource.data.status == 'Gelöst'
+            && request.resource.data.passwordReset == false
+            && request.resource.data.status == 'Neu'
+            && request.resource.data.assignedUid == null
+            && request.resource.data.reopened == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'passwordReset', 'status', 'assignedUid', 'assignedName',
+              'updatedAt', 'unreadAdmin', 'unreadStudent', 'reopened'
+            ])
+          )
+        );
+    }
+
+    function scoutMayUpdateTicket() {
+      return myRole() == 'Medienscout'
+        && resource.data.get('passwordReset', false) == false
+        && (resource.data.get('assignedUid', null) == null
+            || resource.data.get('assignedUid', null) == request.auth.uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.passwordReset == false
+        && (request.resource.data.assignedUid == null
+            || request.resource.data.assignedUid == request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'assignedUid', 'assignedName', 'status', 'updatedAt',
+          'unreadAdmin', 'unreadStudent', 'resolvedAt'
+        ]);
+    }
+
+    // Einstellungen werden schon vor der Anmeldung gelesen; Änderungen sind Admin-only.
+    match /settings/{settingId} {
+      allow read: if settingId == 'main';
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Nutzerprofile: eigene Basisdaten, aber niemals die eigene Rolle ändern.
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isStaff());
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'Schüler'
+        && request.resource.data.email == request.auth.token.email;
+      allow create, update, delete: if isAdmin();
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'klass', 'preferences', 'mediaState'
+        ]);
+      allow delete: if isAdmin();
+    }
+
+    // Öffentliche Kontaktliste: nur angemeldete Nutzer, Rolle stammt aus dem geschützten Profil.
+    match /publicUsers/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && request.resource.data.role == get(/databases/$(database)/documents/users/$(userId)).data.get('role', 'Schüler')
+        && request.resource.data.name == get(/databases/$(database)/documents/users/$(userId)).data.name
+        && request.resource.data.klass == get(/databases/$(database)/documents/users/$(userId)).data.get('klass', '');
+      allow delete: if isAdmin();
+    }
+
+    // Öffentlich sichtbare Inhalte; Änderungen nur durch Medienscouts/Admins.
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create, delete: if isStaff();
+      allow update: if isStaff()
+        || (
+          signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['up'])
+          && request.resource.data.up == resource.data.get('up', 0) + 1
+        )
+        || (
+          signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['down'])
+          && request.resource.data.down == resource.data.get('down', 0) + 1
+        );
+    }
+
+    match /videos/{videoId} {
+      allow read: if true;
+      allow create, update, delete: if isStaff();
+    }
+
+    match /board/{entryId} {
+      allow read: if true;
+      allow create, update, delete: if isStaff();
+    }
+
+    match /helpArticles/{articleId} {
+      allow read: if true;
+      allow create, update, delete: if isStaff();
+    }
+
+    match /surveys/{surveyId} {
+      allow read: if true;
+      allow create, update, delete: if isStaff();
+
+      match /responses/{responseId} {
+        allow read: if isStaff();
+        allow create: if get(/databases/$(database)/documents/surveys/$(surveyId)).data.get('active', true) == true
+          && request.resource.data.ts is number
+          && request.resource.data.answers is map
+          && (
+            (
+              get(/databases/$(database)/documents/surveys/$(surveyId)).data.get('anonymous', true) == true
+              && request.resource.data.uid == null
+              && request.resource.data.userName == 'Anonym'
+              && request.resource.data.userEmail == '-'
+            )
+            ||
+            (
+              signedIn()
+              && get(/databases/$(database)/documents/surveys/$(surveyId)).data.get('anonymous', true) == false
+              && request.resource.data.uid == request.auth.uid
+              && request.resource.data.userName is string
+              && request.resource.data.userEmail == request.auth.token.email
+            )
+          );
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /tickets/{ticketId} {
+      allow read: if canReadTicket(resource.data);
+      allow create: if validStudentTicketCreate();
+      allow update: if isAdmin()
+        || studentMayUpdateOwnTicket()
+        || (signedIn() && scoutMayUpdateTicket());
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        function parentTicket() {
+          return get(/databases/$(database)/documents/tickets/$(ticketId)).data;
+        }
+
+        allow read: if canReadTicket(parentTicket());
+        allow create: if (
+          ownsTicket(parentTicket())
+          && parentTicket().get('status', '') != 'Gelöst'
+          && request.resource.data.from == 'student'
+          && request.resource.data.internal == false
+        ) || (
+          isAdmin()
+          && request.resource.data.from == 'scout'
+        ) || (
+          scoutMayAccessTicket(parentTicket())
+          && request.resource.data.from == 'scout'
+        );
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Sensible Passwortdaten: Admins oder der Ticketinhaber nach Abschluss.
+    match /ticketPasswords/{ticketId} {
+      function relatedTicket() {
+        return get(/databases/$(database)/documents/tickets/$(ticketId)).data;
+      }
+
+      allow read: if isAdmin()
+        || (
+          signedIn()
+          && relatedTicket().uid == request.auth.uid
+          && relatedTicket().status == 'Gelöst'
+        );
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Private Nachrichten dürfen nur Absender und Empfänger lesen.
+    match /privateMessages/{messageId} {
+      allow read: if signedIn()
+        && (resource.data.fromUid == request.auth.uid
+            || resource.data.toUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.text is string
+        && request.resource.data.read == false;
+      allow update: if signedIn()
+        && resource.data.toUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        && request.resource.data.read == true;
+      allow delete: if isAdmin();
+    }
+
+    match /applications/{applicationId} {
+      allow read: if isStaff()
+        || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'Offen'
+        && request.resource.data.name is string
+        && request.resource.data.klass is string
+        && request.resource.data.motivation is string;
+      allow update, delete: if isStaff();
+    }
+
+    match /feedback/{feedbackId} {
+      allow read, update, delete: if isStaff();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.message is string;
+    }
+
+    match /pageViews/{viewId} {
+      allow read: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.ts is number
+        && request.resource.data.keys().hasOnly(['ts']);
+      allow update, delete: if false;
+    }
+
+    // Explizit alles nicht oben freigegebene sperren.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
