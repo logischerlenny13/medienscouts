@@ -44,6 +44,8 @@ service cloud.firestore {
 
     function validStudentTicketCreate() {
       return signedIn()
+        && get(/databases/$(database)/documents/settings/main).data.get('tickets', true) == true
+        && (request.resource.data.passwordReset == false || get(/databases/$(database)/documents/settings/main).data.get('passwordSupport', true) == true)
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.passwordReset is bool
         && request.resource.data.passwordReset in [true, false]
@@ -78,6 +80,16 @@ service cloud.firestore {
         );
     }
 
+    function scoutMayCreateAssignedTicket() {
+      return isStaff()
+        && request.resource.data.passwordReset == false
+        && request.resource.data.assignedUid == request.auth.uid
+        && request.resource.data.uid is string
+        && request.resource.data.status == 'In Bearbeitung'
+        && request.resource.data.createdAt is number
+        && request.resource.data.updatedAt is number;
+    }
+
     function scoutMayUpdateTicket() {
       return myRole() == 'Medienscout'
         && resource.data.get('passwordReset', false) == false
@@ -102,18 +114,24 @@ service cloud.firestore {
     // Nutzerprofile: eigene Basisdaten, aber niemals die eigene Rolle ändern.
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isStaff());
-      allow create: if signedIn()
-        && request.auth.uid == userId
-        && request.resource.data.role == 'Schüler'
-        && request.resource.data.email == request.auth.token.email;
+      allow create: if isStaff()
+        || (signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.role == 'Schüler'
+          && request.resource.data.email == request.auth.token.email
+          && get(/databases/$(database)/documents/settings/main).data.get('allowReg', true) == true);
       allow create, update, delete: if isAdmin();
-      allow update: if signedIn()
+      allow update: if (isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+        && resource.data.get('role', 'Schüler') == 'Schüler'
+        && request.resource.data.role == 'Medienscout')
+        || (signedIn()
         && request.auth.uid == userId
         && request.resource.data.role == resource.data.role
         && request.resource.data.email == resource.data.email
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'klass', 'preferences', 'mediaState'
-        ]);
+        ]));
       allow delete: if isAdmin();
     }
 
@@ -192,7 +210,7 @@ service cloud.firestore {
 
     match /tickets/{ticketId} {
       allow read: if canReadTicket(resource.data);
-      allow create: if isAdmin() || validStudentTicketCreate();
+      allow create: if isAdmin() || scoutMayCreateAssignedTicket() || validStudentTicketCreate();
       allow update: if isAdmin()
         || studentMayUpdateOwnTicket()
         || (signedIn() && scoutMayUpdateTicket());
@@ -242,6 +260,10 @@ service cloud.firestore {
             || resource.data.toUid == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.fromUid == request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.toUid))
+        && (get(/databases/$(database)/documents/settings/main).data.get('privateMessagingPolicy', 'all') != 'staff'
+            || isStaff()
+            || get(/databases/$(database)/documents/users/$(request.resource.data.toUid)).data.get('role', 'Schüler') in ['Admin', 'Medienscout'])
         && request.resource.data.toUid is string
         && request.resource.data.text is string
         && request.resource.data.read == false;
@@ -256,6 +278,7 @@ service cloud.firestore {
       allow read: if isStaff()
         || (signedIn() && resource.data.uid == request.auth.uid);
       allow create: if signedIn()
+        && get(/databases/$(database)/documents/settings/main).data.get('apps', true) == true
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'Offen'
         && request.resource.data.name is string
