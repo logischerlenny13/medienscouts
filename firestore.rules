@@ -116,7 +116,8 @@ service cloud.firestore {
     // Nutzerprofile: eigene Basisdaten, aber niemals die eigene Rolle ändern.
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isStaff());
-      allow create: if isStaff()
+      allow create: if isAdmin()
+        || (myRole() == 'Medienscout' && request.resource.data.role in ['Schüler', 'Medienscout'])
         || (signedIn()
           && request.auth.uid == userId
           && request.resource.data.role == 'Schüler'
