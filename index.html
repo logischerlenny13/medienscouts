@@ -41,6 +41,7 @@ const DB={
   watch:(col,cb,order)=>onSnapshot(order?query(collection(db,col),orderBy(order,'desc')):collection(db,col),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
   watchPrivate:(uid,cb)=>{let a=[],b=[];const emit=()=>cb([...new Map([...a,...b].map(x=>[x.id,x])).values()].sort((x,y)=>(y.createdAt||0)-(x.createdAt||0)));const u1=onSnapshot(query(collection(db,'privateMessages'),where('fromUid','==',uid)),s=>{a=s.docs.map(d=>({id:d.id,...d.data()}));emit()});const u2=onSnapshot(query(collection(db,'privateMessages'),where('toUid','==',uid)),s=>{b=s.docs.map(d=>({id:d.id,...d.data()}));emit()});return()=>{u1();u2()};},
   watchMy:(col,uid,cb)=>onSnapshot(query(collection(db,col),where('uid','==',uid)),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt)))),
+  watchScoutTickets:(uid,cb)=>{let unclaimed=[],mine=[];const emit=()=>cb([...new Map([...unclaimed,...mine].map(t=>[t.id,t])).values()].sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0)));const a=onSnapshot(query(collection(db,'tickets'),where('passwordReset','==',false),where('assignedUid','==',null)),snap=>{unclaimed=snap.docs.map(d=>({id:d.id,...d.data()}));emit()},err=>console.error('Unbeanspruchte Tickets konnten nicht geladen werden:',err));const b=onSnapshot(query(collection(db,'tickets'),where('passwordReset','==',false),where('assignedUid','==',uid)),snap=>{mine=snap.docs.map(d=>({id:d.id,...d.data()}));emit()},err=>console.error('Eigene Tickets konnten nicht geladen werden:',err));return()=>{a();b()};},
   add:(col,d)=>addDoc(collection(db,col),d),
   set:(col,id,d)=>setDoc(doc(db,col,id),d),
   upd:(col,id,d)=>updateDoc(doc(db,col,id),d),
@@ -137,7 +138,8 @@ onAuthStateChanged(auth,async u=>{
 
   if(['Admin','Medienscout'].includes(p.role)){
     const w=(c,k,o)=>S.unsubs.push(DB.watch(c,d=>{S[k]=d;render()},o));
-    w('tickets','tickets','updatedAt');
+    if(p.role==='Admin')w('tickets','tickets','updatedAt');
+    else S.unsubs.push(DB.watchScoutTickets(u.uid,d=>{S.tickets=d;render()}));
     if(p.role==='Admin')S.unsubs.push(DB.watch('pageViews',d=>{S.pageViews=d.length;render()}));
     w('applications','apps','createdAt');
     w('users','users');
@@ -251,22 +253,22 @@ function mediaCard(kind,x){
 }
 
 function homeView(){
-  if(S.settings.mediaLibrary===false)return '<div class="panel text-center"><h1 class="text-xl font-bold">Artikel und Videos sind gerade nicht verfügbar.</h1></div>';
-  const q=S.q.toLowerCase(),searching=!!S.q.trim()||S.cat!=='Alle';
+  const q=S.q.toLowerCase(),searching=!!S.q.trim()||S.cat!=='Alle',mediaEnabled=S.settings.mediaLibrary!==false;
   const A=S.articles.filter(a=>a.published!==false),V=S.videos.filter(v=>v.published!==false);
   const arts=sortPinned((searching?A:A.filter(a=>a.pinned)).filter(a=>(S.cat==='Alle'||a.cat===S.cat)&&(a.title+' '+a.body).toLowerCase().includes(q))).slice(0,searching?50:4);
   const vids=sortPinned((searching?V:V.filter(v=>v.pinned)).filter(v=>(S.cat==='Alle'||(v.cat||'Sonstiges')===S.cat)&&((v.title||'')+' '+(v.desc||'')).toLowerCase().includes(q))).slice(0,searching?50:4);
   const head=(t,view)=>`<h2 class="ptitle" onclick="S.view='${view}';S.q='';S.cat='Alle';render()">${t} ${ic('chev','w-6 h-6')}</h2>`;
   const empty=t=>`<div class="card2 opacity-70 md:col-span-2">${t}</div>`;
-  const more=[['surveys','Umfragen','surveys'],['activityOverview','Aktivität','activity'],['helpCenter','Hilfe-Center','help'],['privateMessages','Nachrichten','privateMessages']].filter(([k])=>S.settings[k]).map(([k,l,v])=>`<button class="chip" onclick="${v==='surveys'?"S.activeSurveyId=null;":''}${v==='privateMessages'&&!S.user?"openAuth('login')":`S.view='${v}';render()`}">${l}</button>`).join('');
+  const more=[['surveys','Umfragen','surveys'],['activityOverview','Aktivität','activity'],['helpCenter','Hilfe-Center','help'],['privateMessages','Nachrichten','privateMessages']].filter(([k])=>S.settings[k]).map(([k,l,v])=>`<button class="chip" onclick="${v==='surveys'?"S.activeSurveyId=null;":''}${v==='privateMessages'&&!S.user?"openAuth('login')":`S.view='${v}';render()` }">${l}</button>`).join('');
   return `<div class="space-y-4 max-w-[1800px] mx-auto">
     ${S.settings.board&&S.boardItems.length&&!searching?`<section class="panel"><h2 class="ptitle !cursor-default">Aktuelles</h2><div class="grid md:grid-cols-2 gap-4">${S.boardItems.slice(0,4).map(b=>`<div class="card2"><div class="text-xs opacity-60">${esc(b.type)} · ${fmt(b.createdAt)}</div><b class="text-lg">${esc(b.title)}</b><p class="opacity-80 mt-1">${esc(b.text)}</p>${b.img?`<img src="${b.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 mx-auto cursor-zoom-in" alt="">`:''}</div>`).join('')}</div></section>`:''}
-    <section class="panel">${head('Anleitungen','articles')}<div class="grid md:grid-cols-2 gap-4">${arts.map(a=>mediaCard('articles',a)).join('')||empty(searching?'Keine passenden Anleitungen gefunden.':'Noch keine angepinnten Anleitungen.')}</div></section>
-    <section class="panel">${head('Erklärvideos','videos')}<div class="grid md:grid-cols-2 gap-4">${vids.map(v=>mediaCard('videos',v)).join('')||empty(searching?'Keine passenden Videos gefunden.':'Noch keine angepinnten Videos.')}</div></section>
+    ${!searching&&(S.settings.tickets||S.settings.passwordSupport)?`<section class="panel"><div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><h2 class="font-bold text-lg">Du brauchst Hilfe?</h2><p class="text-sm opacity-80 mt-1">Du hast eine Frage? Öffne ein Ticket. Passwort für eine App vergessen? Lass es hier zurücksetzen.</p></div><div class="flex flex-wrap gap-2">${S.settings.tickets?`<button class="chip" onclick="goProtected('tickets')">Ticket öffnen</button>`:''}${S.settings.passwordSupport?`<button class="chip" onclick="goProtected('pwreset')">Passwort zurücksetzen</button>`:''}</div></div></section>`:''}
+    ${mediaEnabled?`<section class="panel">${head('Anleitungen','articles')}<div class="grid md:grid-cols-2 gap-4">${arts.map(a=>mediaCard('articles',a)).join('')||empty(searching?'Keine passenden Anleitungen gefunden.':'Noch keine angepinnten Anleitungen.')}</div></section>
+    <section class="panel">${head('Erklärvideos','videos')}<div class="grid md:grid-cols-2 gap-4">${vids.map(v=>mediaCard('videos',v)).join('')||empty(searching?'Keine passenden Videos gefunden.':'Noch keine angepinnten Videos.')}</div></section>`:''}
+    ${!searching&&S.settings.surveys!==false?`<section class="panel">${surveysView()}</section>`:''}
     ${more&&!searching?`<section class="panel flex flex-wrap justify-center gap-3">${more}</section>`:''}
   </div>`;
 }
-
 function mediaLibraryView(kind){
   if(S.settings.mediaLibrary===false)return '<div class="panel text-center">Dieser Bereich ist aktuell deaktiviert.</div>';
   const isV=kind==='videos',q=S.q.toLowerCase();
