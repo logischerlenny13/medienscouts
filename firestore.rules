@@ -47,6 +47,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/settings/main).data.get('tickets', true) == true
         && (request.resource.data.passwordReset == false || get(/databases/$(database)/documents/settings/main).data.get('passwordSupport', true) == true)
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.userEmail == request.auth.token.email
+        && request.resource.data.userName is string
         && request.resource.data.passwordReset is bool
         && request.resource.data.passwordReset in [true, false]
         && request.resource.data.status == 'Neu'
@@ -260,6 +262,7 @@ service cloud.firestore {
             || resource.data.toUid == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.fromRole == myRole()
         && exists(/databases/$(database)/documents/users/$(request.resource.data.toUid))
         && (get(/databases/$(database)/documents/settings/main).data.get('privateMessagingPolicy', 'all') != 'staff'
             || isStaff()
@@ -280,6 +283,7 @@ service cloud.firestore {
       allow create: if signedIn()
         && get(/databases/$(database)/documents/settings/main).data.get('apps', true) == true
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
         && request.resource.data.status == 'Offen'
         && request.resource.data.name is string
         && request.resource.data.klass is string
