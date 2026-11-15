@@ -192,7 +192,7 @@ service cloud.firestore {
 
     match /tickets/{ticketId} {
       allow read: if canReadTicket(resource.data);
-      allow create: if validStudentTicketCreate();
+      allow create: if isAdmin() || validStudentTicketCreate();
       allow update: if isAdmin()
         || studentMayUpdateOwnTicket()
         || (signedIn() && scoutMayUpdateTicket());
