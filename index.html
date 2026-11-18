@@ -1378,6 +1378,10 @@ window.savePwGuideText=async()=>{
   await DB.set('settings','main',{...S.settings,setupDone:true,pwGuideText:$('#pw-guide-text')?.value||''});
   toast('Anleitungstext gespeichert.');
 };
+window.openButtonGuide=()=>{
+ const img=S.settings.buttonGuideImage;
+ modal('<button class="absolute top-4 right-4 z-10 btn2" onclick="closeModal()"><i data-lucide="x" class="w-5 h-5"></i></button>'+(img?'<img src="'+esc(img)+'" alt="Erklärung der Schaltflächen" class="w-full h-full max-h-[90vh] object-contain mx-auto">':'<div class="min-h-[70vh] flex flex-col items-center justify-center text-center gap-3"><i data-lucide="circle-help" class="w-16 h-16 text-teal-600"></i><h2 class="text-2xl font-bold">Hilfe zu den Schaltflächen</h2><p class="max-w-lg text-sm opacity-70">Die Medienscouts können eine Grafik mit Erklärungen im Admin-Menü hochladen. Sie wird hier anschließend im Vollbild angezeigt.</p></div>'),true);
+};
 window.saveRecoverySettings=async()=>{
  if(S.user?.role!=='Admin')return toast('Nur Admins dürfen diese Einstellungen ändern.');
  const recoveryContact=val('recovery-contact');
@@ -1547,6 +1551,12 @@ const adminTabs={
       <div class="pt-3 mt-2 border-t border-slate-200 dark:border-slate-700"><h3 class="font-bold text-base mb-3">Ticket-System · Allgemein</h3>${toggleRow('tickets','Support-Ticket-System','Schüler können Tickets erstellen & mit euch chatten')}</div>
       ${toggleRow('apps','Bewerbungs-Modul','Bewerbungsformular für neue Medienscouts freischalten')}
       ${toggleRow('allowReg','Selbst-Registrierung im Login-Fenster','Schüler können sich selbst einen Account anlegen')}
+      <section class="glass p-4 space-y-3 ${S.user.role==="Admin"?"":"hidden"}">
+        <h3 class="font-bold text-sm">Hilfe-Grafik für die Schaltflächen</h3>
+        <p class="text-xs opacity-70">Das Fragezeichen oben in der Navigation öffnet dieses Bild bildschirmfüllend. Lade hier eine Grafik hoch, auf der die Funktionen und Knöpfe erklärt werden.</p>
+        ${S.settings.buttonGuideImage?'<img src="'+esc(S.settings.buttonGuideImage)+'" onclick="zoom(this.src)" class="max-h-40 rounded-xl object-contain cursor-zoom-in">':'<p class="text-xs opacity-60">Noch keine Hilfe-Grafik hochgeladen.</p>'}
+        <div class="flex gap-2 flex-wrap"><label class="btn2">Erklärbild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'buttonGuideImage',1800)"></label>${S.settings.buttonGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(\'buttonGuideImage\',\'\')">Entfernen</button>':''}</div>
+      </section>
       <section class="glass p-4 space-y-3 ${S.user.role==="Admin"?"":"hidden"}">
         <h3 class="font-bold text-sm">Registrierung & Kontowiederherstellung</h3>
         <p class="text-xs opacity-70">Die zweite E-Mail wird bei der Registrierung zunächst nur gespeichert. Sie ist noch kein bestätigter Firebase-Wiederherstellungsweg.</p>
