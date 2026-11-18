@@ -21,8 +21,9 @@
   <div id="app" class="flex-1 flex flex-col"></div>
 </div>
 <div id="modal"></div>
+<div id="auth-fullscreen"></div>
 <div id="chat-fullscreen"></div>
-<div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100000]"></div>
+<div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[100000] pointer-events-none"></div>
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -67,7 +68,7 @@ const DB={
 
 const S={
   settings:{
-    buttonGuideImage:'',tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,profileExtras:true,feedback:true,personalization:true,mediaLibrary:true,mediaFavorites:true,mediaProgress:true,mediaNewBadge:true,mediaRelated:true,
+    tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,profileExtras:true,feedback:true,personalization:true,mediaLibrary:true,mediaFavorites:true,mediaProgress:true,mediaNewBadge:true,mediaRelated:true,
     activityOverview:true,privateMessages:true,helpCenter:true,privateMessagingPolicy:'all',
     slashCommandsEnabled:true,passwordSupport:true,
     slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
@@ -75,15 +76,14 @@ const S={
   },
   needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],pubUsers:[],feedbackItems:[],helpArticles:[],privateMessages:[],securityIPs:[],securityOverrides:[],securityBlockedAccounts:[],securityBlockedDevices:[],securitySetupRequired:false,securityLoading:false,securityAlertCount:0,
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
-  adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,pageViews:0,
-  regStep:1,regDraft:{},
+  adminTab:'settings',authMode:'login',regStep:1,regShowPw:false,authMsg:'',regDraft:{email:'',name:'',klass:'Klasse 8',pw:'',pw2:'',ack1:false,ack2:false,backupEmail:''},q:'',cat:'Alle',edit:null,open:null,pageViews:0,
   chatNoteMode:false,surveyBuilderQs:[],svDraft:null,surveyResults:[],activeResultSurvey:null,unsubs:[],unsubSurveyResp:null,
   decryptedChatPw:{},revealedChatPw:{},openingChatId:null,creatingPwTicket:false
 };
 let lastCountedView=null;
 
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const toast=t=>{$('#toast').innerHTML=`<div class="glass px-4 py-2.5 text-sm font-medium shadow-xl border-blue-500/40">${esc(t)}</div>`;setTimeout(()=>$('#toast').innerHTML='',3400)};
+const toast=t=>{const el=$('#toast');if(!el)return;el.innerHTML=`<div class="lg-toast px-4 py-2.5 text-sm font-medium shadow-2xl">${esc(t)}</div>`;clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>{if($('#toast'))$('#toast').innerHTML=''},3400)};
 const icons=()=>lucide.createIcons();
 const val=id=>$('#'+id)?.value.trim()||'';
 const fmt=ts=>ts?new Date(ts).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'}):'-';
@@ -312,12 +312,40 @@ html.dark .glass{background:rgba(0,0,0,.22);border:0;backdrop-filter:none}
 .chip{background:rgba(0,0,0,.25);border-radius:.9rem;padding:.6rem 1rem;font-weight:600;cursor:pointer}.chip:hover{background:rgba(255,255,255,.16)}
 .playbtn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:4.5rem;height:4.5rem;border-radius:1.2rem;background:rgba(120,110,90,.85);display:flex;align-items:center;justify-content:center}
 .playbtn img{width:2rem;height:2rem}
-.search-pill-outer{background:#0b5c60;border:0;border-radius:9999px;padding:5%;box-shadow:0 4px 14px rgba(0,0,0,.22);display:inline-flex;align-items:center;width:clamp(150px,23vw,420px);aspect-ratio:2.697;min-width:0;flex-shrink:0}
-.search-pill-inner{background:#073b40;border-radius:9999px;padding:0 5%;display:flex;align-items:center;gap:4%;transition:box-shadow .15s,background .15s;width:100%;height:100%;min-width:0}
-.search-pill-inner svg{width:16%;height:auto;aspect-ratio:1;flex-shrink:0;stroke-width:1.55}
-.search-pill-inner input{width:100%;min-width:0;flex:1;color:white;font-size:clamp(.75rem,1.1vw,1rem)}
-.search-pill-inner input::placeholder{color:transparent}
-.search-pill-inner:focus-within{box-shadow:0 0 0 2px rgba(103,232,249,.4);background:#042f34}
+.search-pill-outer{background:linear-gradient(180deg,#245259 0%,#285759 100%);border-radius:1.12rem;padding:.45rem;display:inline-flex;align-items:center}
+.search-pill-inner{background:linear-gradient(180deg,#193a40 0%,#1c3d40 100%);border-radius:.74rem;padding:.4rem .9rem .4rem .68rem;display:flex;align-items:center;gap:.58rem;transition:box-shadow .15s,background .15s}
+.search-pill-inner:focus-within{background:#153237;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22)}
+.lg-backdrop{background:radial-gradient(circle at 18% 15%,rgba(5,105,122,.46),transparent 52%),radial-gradient(circle at 82% 85%,rgba(73,117,56,.42),transparent 54%),rgba(4,20,24,.64);backdrop-filter:blur(26px) saturate(185%);-webkit-backdrop-filter:blur(26px) saturate(185%)}
+.lg-fullscreen-auth{background:radial-gradient(circle at 16% 12%,rgba(28,176,192,.36) 0%,transparent 44%),radial-gradient(circle at 85% 86%,rgba(104,178,76,.34) 0%,transparent 48%),linear-gradient(165deg,#045463 0%,#0b494e 40%,#2a5b3c 76%,#426e34 100%)}
+.lg-surface{background:linear-gradient(155deg,rgba(255,255,255,.17) 0%,rgba(255,255,255,.07) 48%,rgba(6,34,38,.44) 100%);backdrop-filter:blur(42px) saturate(200%);-webkit-backdrop-filter:blur(42px) saturate(200%);border:1px solid rgba(255,255,255,.26);box-shadow:inset 0 1px 1px rgba(255,255,255,.42),inset 0 -1px 1px rgba(255,255,255,.1),0 30px 72px rgba(0,0,0,.48);border-radius:1.85rem;color:#f8fafc}
+html:not(.dark) #app-modal-layer .lg-surface{background:linear-gradient(155deg,rgba(255,255,255,.9) 0%,rgba(236,248,247,.82) 100%);border:1px solid rgba(255,255,255,.92);box-shadow:inset 0 1px 1px rgba(255,255,255,.98),0 28px 65px rgba(5,45,52,.28);color:#0f172a}
+.lg-card{background:linear-gradient(160deg,rgba(255,255,255,.15) 0%,rgba(255,255,255,.06) 100%);backdrop-filter:blur(34px) saturate(190%);-webkit-backdrop-filter:blur(34px) saturate(190%);border:1px solid rgba(255,255,255,.24);box-shadow:inset 0 1px 0 rgba(255,255,255,.36),inset 0 -1px 0 rgba(255,255,255,.08),0 22px 52px rgba(0,0,0,.28);border-radius:1.75rem;color:#f8fafc}
+.lg-subcard{background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.14);border-radius:1.15rem}
+html:not(.dark) #app-modal-layer .lg-subcard{background:rgba(5,105,122,.07);border-color:rgba(5,105,122,.16)}
+.lg-seg{background:rgba(0,0,0,.24);border:1px solid rgba(255,255,255,.22);box-shadow:inset 0 1px 3px rgba(0,0,0,.28),inset 0 -1px 0 rgba(255,255,255,.12);border-radius:9999px;padding:.28rem;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+.lg-seg-btn{border-radius:9999px;padding:.62rem 1rem;font-size:.86rem;font-weight:600;color:rgba(255,255,255,.78);transition:.18s;cursor:pointer}
+.lg-seg-btn:hover{color:#fff}
+.lg-seg-btn.on{background:linear-gradient(135deg,rgba(255,255,255,.26) 0%,rgba(255,255,255,.12) 100%);border:1px solid rgba(255,255,255,.38);box-shadow:inset 0 1px 0 rgba(255,255,255,.48),0 6px 18px rgba(0,0,0,.22);color:#fff}
+.lg-close{width:2.5rem;height:2.5rem;border-radius:9999px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 6px 16px rgba(0,0,0,.2);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);color:#fff;cursor:pointer;transition:transform .15s,background .15s}
+.lg-close:hover{background:rgba(255,255,255,.26);transform:scale(1.04)}
+html:not(.dark) #app-modal-layer .lg-close{background:rgba(15,23,42,.08);border-color:rgba(15,23,42,.15);box-shadow:inset 0 1px 0 rgba(255,255,255,.7);color:#0f172a}
+.lg-icon-halo{width:4.3rem;height:4.3rem;border-radius:1.4rem;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(155deg,rgba(255,255,255,.24),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.32);box-shadow:inset 0 1px 0 rgba(255,255,255,.52),0 14px 32px rgba(0,0,0,.28);backdrop-filter:blur(22px)}
+.lg-toast{background:linear-gradient(145deg,rgba(14,52,58,.86),rgba(14,36,34,.9));backdrop-filter:blur(28px) saturate(190%);-webkit-backdrop-filter:blur(28px) saturate(190%);border:1px solid rgba(255,255,255,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.38),0 14px 36px rgba(0,0,0,.38);border-radius:9999px;color:#fff}
+.lg-cta{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.78rem 1.25rem;border-radius:1rem;background:linear-gradient(135deg,#07869a 0%,#468440 100%);border:1px solid rgba(255,255,255,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.36),0 10px 26px rgba(3,48,54,.36);color:#fff;font-size:.9rem;font-weight:700;cursor:pointer;transition:transform .12s,filter .15s}
+.lg-cta:hover{filter:brightness(1.08)}
+.lg-cta:active{transform:scale(.99)}
+.lg-ghost{display:inline-flex;align-items:center;justify-content:center;gap:.45rem;padding:.72rem 1.05rem;border-radius:1rem;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.26);color:#fff;font-size:.86rem;font-weight:600;cursor:pointer;transition:.15s}
+.lg-ghost:hover{background:rgba(255,255,255,.2)}
+.lg-inp{width:100%;border-radius:1rem;padding:.78rem 1rem;background:rgba(0,0,0,.24);border:1px solid rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.14);color:#fff;outline:none;font-size:.92rem;transition:.15s}
+.lg-inp::placeholder{color:rgba(255,255,255,.55)}
+.lg-inp:focus{border-color:rgba(125,211,252,.68);background:rgba(0,0,0,.34);box-shadow:0 0 0 3px rgba(56,189,248,.22),inset 0 1px 0 rgba(255,255,255,.22)}
+.lg-inp option{background:#092a30;color:#fff}
+#app-modal-layer .inp{background:rgba(0,0,0,.24);border:1px solid rgba(255,255,255,.22);border-radius:1rem;color:#fff;padding:.7rem .95rem}
+#app-modal-layer .inp:focus{border-color:rgba(125,211,252,.65);box-shadow:0 0 0 3px rgba(56,189,248,.2)}
+html:not(.dark) #app-modal-layer .inp{background:rgba(255,255,255,.8);border-color:rgba(5,105,122,.24);color:#0f172a}
+#app-modal-layer .btn{background:linear-gradient(135deg,#07869a 0%,#468440 100%);border:1px solid rgba(255,255,255,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 22px rgba(4,48,54,.3);border-radius:1rem;color:#fff}
+#app-modal-layer .btn2{background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.24);border-radius:1rem;color:#fff}
+html:not(.dark) #app-modal-layer .btn2{background:rgba(15,23,42,.08);border-color:rgba(15,23,42,.15);color:#0f172a}
 `;document.head.appendChild(s)})();
 
 const doSearch=v=>{S.q=v;if(!['home','articles','videos'].includes(S.view))S.view='home';renderMainOnly()};
@@ -341,9 +369,8 @@ const nav=()=>{
         ${isStaff()?`<button class="ib ${on('admin')}" title="Admin" aria-label="Admin" onclick="S.view='admin';render()">${ic('shield')}</button>`:''}
         ${S.settings.personalization?`<button class="ib" title="Hell/Dunkel" onclick="toggleTheme()">${ic(dark?'sun':'moon')}</button>`:''}
         ${S.user?`<button class="ib ${on('profile')}" title="Mein Profil" aria-label="Mein Profil" onclick="S.view='profile';render()">${ic('account')}</button>`:`<button class="ib" title="Anmelden" aria-label="Anmelden" onclick="openAuth('login')">${ic('account')}</button>`}
-        <button class="ib" title="Erklärung aller Schaltflächen" aria-label="Erklärung aller Schaltflächen" onclick="openButtonGuide()"><i data-lucide="circle-help" class="w-5 h-5"></i></button>
       </div>
-      <label class="search-pill-outer cursor-text" aria-label="Suchen"><span class="search-pill-inner"><svg class="shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.4"></circle><path d="m15.5 15.5 5 5"></path></svg><input id="s-q" class="bg-transparent outline-none w-24 sm:w-44 focus:w-32 sm:focus:w-52 text-white placeholder-white/70 text-base sm:text-lg transition-all" placeholder=" " aria-label="Suchen" value="${esc(S.q)}" oninput="doSearch(this.value)"></span></label>
+      <label class="search-pill-outer cursor-text" aria-label="Suchen"><span class="search-pill-inner"><svg class="w-7 h-7 shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.2" cy="10.2" r="6.8"></circle><line x1="15.3" y1="15.3" x2="20.6" y2="20.6"></line></svg><input id="s-q" class="bg-transparent outline-none w-24 sm:w-44 focus:w-32 sm:focus:w-52 text-white placeholder-white/65 text-base sm:text-lg transition-all" placeholder="Suchen ..." value="${esc(S.q)}" oninput="doSearch(this.value)"></span></label>
     </div></div></header>`;
 };
 
@@ -373,10 +400,7 @@ function homeView(){
   const more=[['surveys','Umfragen','surveys'],['activityOverview','Aktivität','activity'],['helpCenter','Hilfe-Center','help'],['privateMessages','Nachrichten','privateMessages']].filter(([k])=>S.settings[k]).map(([k,l,v])=>`<button class="chip" onclick="${v==='surveys'?"S.activeSurveyId=null;":''}${v==='privateMessages'&&!S.user?"openAuth('login')":`S.view='${v}';render()` }">${l}</button>`).join('');
   return `<div class="space-y-4 max-w-[1800px] mx-auto">
     ${S.settings.board&&S.boardItems.length&&!searching?`<section class="panel"><h2 class="ptitle !cursor-default">Aktuelles</h2><div class="grid md:grid-cols-2 gap-4">${S.boardItems.slice(0,4).map(b=>`<div class="card2"><div class="text-xs opacity-60">${esc(b.type)} · ${fmt(b.createdAt)}</div><b class="text-lg">${esc(b.title)}</b><p class="opacity-80 mt-1">${esc(b.text)}</p>${b.img?`<img src="${b.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 mx-auto cursor-zoom-in" alt="">`:''}</div>`).join('')}</div></section>`:''}
-    ${!searching&&(S.settings.tickets||S.settings.passwordSupport)?`<section class="grid md:grid-cols-2 gap-4">
-      ${S.settings.tickets?`<article class="panel !p-6 border-l-4 border-blue-500 flex flex-col justify-between gap-5"><div><div class="w-12 h-12 rounded-2xl bg-blue-500/15 text-blue-500 flex items-center justify-center mb-3"><i data-lucide="ticket" class="w-6 h-6"></i></div><h2 class="text-xl font-bold">Support-Ticket erstellen</h2><p class="text-sm opacity-75 mt-2">Du hast eine Frage oder brauchst Hilfe? Schreib direkt mit den Medienscouts.</p></div><button class="btn w-full" onclick="goProtected('tickets')">Neues Ticket öffnen <i data-lucide="arrow-right" class="w-4 h-4"></i></button></article>`:''}
-      ${S.settings.passwordSupport?`<article class="panel !p-6 border-l-4 border-rose-500 flex flex-col justify-between gap-5"><div><div class="w-12 h-12 rounded-2xl bg-rose-500/15 text-rose-500 flex items-center justify-center mb-3"><i data-lucide="key-round" class="w-6 h-6"></i></div><h2 class="text-xl font-bold">App-Passwort vergessen?</h2><p class="text-sm opacity-75 mt-2">Lass dein Passwort für Untis, Schulportal und weitere Apps sicher zurücksetzen.</p></div><button class="btn w-full !bg-rose-600 hover:!bg-rose-500" onclick="goProtected('pwreset')">Passwort zurücksetzen <i data-lucide="arrow-right" class="w-4 h-4"></i></button></article>`:''}
-    </section>`:''}
+    ${!searching&&(S.settings.tickets||S.settings.passwordSupport)?`<section class="panel"><div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><h2 class="font-bold text-lg">Du brauchst Hilfe?</h2><p class="text-sm opacity-80 mt-1">Du hast eine Frage? Öffne ein Ticket. Passwort für eine App vergessen? Lass es hier zurücksetzen.</p></div><div class="flex flex-wrap gap-2">${S.settings.tickets?`<button class="chip" onclick="goProtected('tickets')">Ticket öffnen</button>`:''}${S.settings.passwordSupport?`<button class="chip" onclick="goProtected('pwreset')">Passwort zurücksetzen</button>`:''}</div></div></section>`:''}
     ${mediaEnabled?`<section class="panel">${head('Anleitungen','articles')}<div class="grid md:grid-cols-2 gap-4">${arts.map(a=>mediaCard('articles',a)).join('')||empty(searching?'Keine passenden Anleitungen gefunden.':'Noch keine angepinnten Anleitungen.')}</div></section>
     <section class="panel">${head('Erklärvideos','videos')}<div class="grid md:grid-cols-2 gap-4">${vids.map(v=>mediaCard('videos',v)).join('')||empty(searching?'Keine passenden Videos gefunden.':'Noch keine angepinnten Videos.')}</div></section>`:''}
     ${!searching&&S.settings.surveys!==false?`<section class="panel">${surveysView()}</section>`:''}
@@ -423,12 +447,12 @@ window.openVideo=id=>{
   S.activeVideoId=id;markMediaSeen('videos',id);
   const related=S.videos.filter(x=>x.id!==id&&x.published!==false&&x.cat===v.cat).slice(0,3);
   modal(`<div class="space-y-4">
-    <div class="flex items-center justify-between gap-3"><span class="text-xs font-semibold uppercase tracking-wide text-rose-500">Video ansehen</span><button class="btn2 !p-2" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div>
-    <div class="aspect-video bg-black rounded-xl overflow-hidden"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${esc(v.vid)}?autoplay=1&rel=0" title="${esc(v.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
-    <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h2 class="text-xl font-bold">${esc(v.title)}</h2><div class="text-xs opacity-60 mt-1">${esc(v.cat||'Video')} · ${fmt(v.createdAt)}</div></div>${S.settings.mediaFavorites!==false?`<button class="btn2 shrink-0" onclick="updateMediaState('videos','${v.id}','favorites')" title="Merken"><i data-lucide="bookmark" class="w-4 h-4 ${mediaIsFavorite('videos',v.id)?'text-amber-500':''}"></i></button>`:''}</div>
-    ${v.desc?'<div class="pt-3 border-t border-slate-200 dark:border-slate-700"><h3 class="font-semibold text-sm mb-1">Beschreibung</h3><p class="text-sm opacity-80 whitespace-pre-wrap leading-relaxed">'+esc(v.desc)+'</p></div>':''}
+    <div class="flex items-center justify-between gap-3"><div class="flex items-center gap-2.5">${ic('video','w-7 h-7')}<span class="text-xs font-semibold uppercase tracking-wide opacity-80">Video ansehen</span></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="aspect-video bg-black rounded-2xl overflow-hidden border border-white/15"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${esc(v.vid)}?autoplay=1&rel=0" title="${esc(v.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+    <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h2 class="text-xl font-bold">${esc(v.title)}</h2><div class="text-xs opacity-65 mt-1">${esc(v.cat||'Video')} · ${fmt(v.createdAt)}</div></div>${S.settings.mediaFavorites!==false?`<button type="button" class="btn2 shrink-0" onclick="updateMediaState('videos','${v.id}','favorites')" title="Merken"><i data-lucide="bookmark" class="w-4 h-4 ${mediaIsFavorite('videos',v.id)?'text-amber-400':''}"></i></button>`:''}</div>
+    ${v.desc?'<div class="pt-3 border-t border-white/15"><h3 class="font-semibold text-sm mb-1">Beschreibung</h3><p class="text-sm opacity-80 whitespace-pre-wrap leading-relaxed">'+esc(v.desc)+'</p></div>':''}
     <a class="btn2 w-full justify-center" href="https://www.youtube.com/watch?v=${encodeURIComponent(v.vid)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" class="w-4 h-4"></i>Auf YouTube öffnen</a>
-    ${S.settings.mediaRelated!==false&&related.length?'<div class="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-2"><h3 class="font-semibold text-sm">Weitere Videos zum Thema</h3>'+related.map(x=>`<button class="block w-full text-left p-2 rounded-lg hover:bg-slate-500/10 text-sm" onclick="openVideo('${x.id}')">${esc(x.title)}</button>`).join('')+'</div>':''}
+    ${S.settings.mediaRelated!==false&&related.length?'<div class="pt-3 border-t border-white/15 space-y-2"><h3 class="font-semibold text-sm">Weitere Videos zum Thema</h3>'+related.map(x=>`<button type="button" class="block w-full text-left p-2.5 rounded-xl hover:bg-white/10 text-sm transition" onclick="openVideo('${x.id}')">${esc(x.title)}</button>`).join('')+'</div>':''}
   </div>`);
   const panel=$('#modal .max-w-xl');if(panel)panel.classList.replace('max-w-xl','max-w-4xl');
 };
@@ -640,6 +664,7 @@ function studentTicketsView(){
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold text-sm">${esc(t.subject||t.category)}</span>
               ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
+              ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-500 font-semibold">🔒 E2EE</span>':''}
               ${badge(t.status)}
               ${t.assignedName?`<span class="text-[11px] px-2 py-0.5 rounded bg-slate-500/15">Betreut von: ${esc(t.assignedName)}</span>`:''}
               ${t.unreadStudent?`<span class="text-[11px] bg-blue-600 text-white px-2 py-0.5 rounded-full">Neue Nachricht</span>`:''}
@@ -752,96 +777,247 @@ window.goProtected=target=>{
   S.view=target;render();
 };
 
-const modal=(h,fullscreen=false)=>{
+const modal=h=>{
   const chatHost=$('#chat-fullscreen')?.querySelector('#c-list')?$('#chat-fullscreen'):null;
   const host=chatHost||$('#modal');
   host.querySelector('#app-modal-layer')?.remove();
-  const layer=fullscreen?'p-0':'p-4';
-  const panel=fullscreen?'!rounded-none w-full h-full max-w-none max-h-none overflow-auto p-5 sm:p-8':'w-full max-w-xl max-h-[90vh] overflow-auto p-6';
-  host.insertAdjacentHTML('beforeend',`<div id="app-modal-layer" class="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center ${layer}" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 ${panel} relative">${h}</div></div>`);
+  host.insertAdjacentHTML('beforeend',`<div id="app-modal-layer" class="fixed inset-0 z-[99999] lg-backdrop flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="lg-surface w-full max-w-xl max-h-[90vh] overflow-auto p-6 sm:p-7 relative">${h}</div></div>`);
   icons();
 };
-window.closeModal=()=>{S.open=null;$('#modal')?.querySelector('#app-modal-layer')?.remove();$('#chat-fullscreen')?.querySelector('#app-modal-layer')?.remove()};
+window.closeModal=()=>{S.open=null;S.authMsg='';$('#modal')?.querySelector('#app-modal-layer')?.remove();$('#chat-fullscreen')?.querySelector('#app-modal-layer')?.remove();if($('#auth-fullscreen'))$('#auth-fullscreen').innerHTML=''};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&($('#app-modal-layer')||$('#auth-fullscreen')?.firstElementChild))closeModal()});
 
-window.openAuth=(mode='login')=>{
-  if(mode==='reg'&&S.authMode!=='reg'){S.regStep=1;S.regDraft={name:'',klass:'Klasse 8',email:'',password:'',recoveryEmail:'',acceptedWarnings:false};}
-  S.authMode=mode;S.open='login';
-  const regAllowed=S.settings.allowReg;
-  modal(`<button class="absolute top-4 right-4 btn2 z-10" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
-    <div class="${mode==='reg'?'w-full max-w-7xl mx-auto py-4 sm:py-8':'max-w-sm mx-auto py-2'} space-y-5">
-      <div class="text-center space-y-1">
-        <div class="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-2"><i data-lucide="user-check" class="w-6 h-6"></i></div>
-        <h2 class="text-xl font-bold">${mode=='login'?'Schul-Account Login':mode=='reg'?'Konto registrieren':'Passwort zurücksetzen'}</h2>
-        <p class="text-xs opacity-70">${mode=='reset'?'Gib deine Schul-E-Mail-Adresse ein. Wir senden dir einen Link zum Zurücksetzen.':'Melde dich mit deiner Schul-E-Mail-Adresse an.'}</p>
+function syncAuthDraft(){
+  const d=S.regDraft||(S.regDraft={email:'',name:'',klass:'Klasse 8',pw:'',pw2:'',ack1:false,ack2:false,backupEmail:''});
+  if($('#l-mail'))d.email=$('#l-mail').value;
+  if($('#l-name'))d.name=$('#l-name').value;
+  if($('#l-class'))d.klass=$('#l-class').value;
+  if($('#l-pw'))d.pw=$('#l-pw').value;
+  if($('#l-pw2'))d.pw2=$('#l-pw2').value;
+  if($('#l-ack1'))d.ack1=$('#l-ack1').checked;
+  if($('#l-ack2'))d.ack2=$('#l-ack2').checked;
+  if($('#l-mail2'))d.backupEmail=$('#l-mail2').value;
+}
+function setAuthInlineMsg(msg){
+  S.authMsg=msg||'';
+  const box=$('#auth-inline-msg');
+  if(box)box.innerHTML=msg?`<div class="lg-toast inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-medium mt-4">${esc(msg)}</div>`:'';
+}
+window.regBack=()=>{syncAuthDraft();if(S.regStep>1){S.regStep--;openAuth('reg',true)}};
+window.regJump=step=>{syncAuthDraft();if(step>=1&&step<=S.regStep){S.regStep=step;openAuth('reg',true)}};
+window.regNext=()=>{
+  syncAuthDraft();
+  const d=S.regDraft;
+  if(S.regStep===1){
+    const mail=d.email.trim(),name=d.name.trim();
+    if(!mail||!mail.includes('@')||!name){setAuthInlineMsg('Bitte gültige Schul-E-Mail-Adresse und Namen eintragen.');return;}
+  }else if(S.regStep===2){
+    if((d.pw||'').length<6){setAuthInlineMsg('Das Medienscouts-Passwort muss mindestens 6 Zeichen lang sein.');return;}
+    if(d.pw!==d.pw2){setAuthInlineMsg('Die beiden Medienscouts-Passwörter stimmen nicht überein.');return;}
+  }else if(S.regStep===3){
+    if(!d.ack1||!d.ack2){setAuthInlineMsg('Bitte bestätige zuerst beide wichtigen Hinweise.');return;}
+  }
+  S.authMsg='';
+  if(S.regStep<4){S.regStep++;openAuth('reg',true)}
+};
+window.toggleAuthPwVis=()=>{syncAuthDraft();S.regShowPw=!S.regShowPw;openAuth(S.authMode,true)};
+
+window.openAuth=(mode='login',preserveDraft=false)=>{
+  if(mode==='reg'&&!preserveDraft){S.regStep=1;S.regDraft={email:S.regDraft?.email||'',name:S.regDraft?.name||'',klass:S.regDraft?.klass||'Klasse 8',pw:'',pw2:'',ack1:false,ack2:false,backupEmail:''};}
+  S.authMode=mode;S.open='login';S.authMsg='';
+  $('#modal')?.querySelector('#app-modal-layer')?.remove();
+  $('#chat-fullscreen')?.querySelector('#app-modal-layer')?.remove();
+  const host=$('#auth-fullscreen');if(!host)return;
+  const regAllowed=S.settings.allowReg!==false;
+  const d=S.regDraft;
+  const heroIco=mode==='reg'?'userplus':mode==='reset'?'key':'account';
+  const heroTitle=mode==='reg'?'Konto registrieren':mode==='reset'?'Passwort zurücksetzen':'Schul-Account Login';
+  const heroSub=mode==='reset'?'Gib deine Schul-E-Mail-Adresse ein. Wir senden dir einen Link zum Zurücksetzen.':'Melde dich mit deiner Schul-E-Mail-Adresse an.';
+  const switcher=regAllowed&&mode!=='reset'?`<div class="lg-seg grid grid-cols-2 max-w-2xl mx-auto w-full">
+    <button type="button" class="lg-seg-btn ${mode==='login'?'on':''}" onclick="openAuth('login')">Anmelden</button>
+    <button type="button" class="lg-seg-btn ${mode==='reg'?'on':''}" onclick="openAuth('reg')">Registrieren</button>
+  </div>`:'';
+
+  let bodyHtml='';
+  if(mode==='reg'){
+    const steps=[
+      {n:1,title:'Schul-E-Mail',desc:'Deine Schuladresse und Kontodaten'},
+      {n:2,title:'Passwort',desc:'Lege dein persönliches Passwort fest'},
+      {n:3,title:'Hinweise',desc:'Wichtige Hinweise bestätigen'},
+      {n:4,title:'Zweite E-Mail',desc:'Optional eine zweite Adresse hinterlegen'}
+    ];
+    const stepSidebar=`<aside class="lg-card p-5 sm:p-6 flex flex-col justify-between gap-5">
+      <div class="space-y-5">
+        <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-white/65">Konto erstellen</div>
+        <div class="space-y-1">
+          ${steps.map((st,idx)=>{
+            const active=S.regStep===st.n,done=S.regStep>st.n,clickable=done;
+            return `<div class="relative flex items-start gap-3.5 ${idx<steps.length-1?'pb-5':''}">
+              ${idx<steps.length-1?`<span class="absolute left-[1.06rem] top-9 bottom-0 w-0.5 ${done?'bg-emerald-300/70':'bg-white/20'}"></span>`:''}
+              <button type="button" ${clickable?`onclick="regJump(${st.n})"`:''} class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-sm font-bold transition ${active?'bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-950 shadow-lg ring-4 ring-white/20':done?'bg-emerald-400/25 border border-emerald-300/60 text-emerald-100 cursor-pointer':'bg-white/10 border border-white/20 text-white/60 cursor-default'}">${done?'✓':st.n}</button>
+              <div class="${clickable?'cursor-pointer':''}" ${clickable?`onclick="regJump(${st.n})"`:''}>
+                <div class="text-sm font-bold ${active?'text-emerald-200':done?'text-white':'text-white/75'}">${st.title}</div>
+                <div class="text-xs leading-snug text-white/60 mt-0.5">${st.desc}</div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="pt-4 border-t border-white/15 text-xs text-white/65">Schritt ${S.regStep} von 4</div>
+    </aside>`;
+
+    let stepForm='';
+    if(S.regStep===1){
+      stepForm=`<div class="space-y-4">
+        <div>
+          <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-200">Schritt 1 / 4</div>
+          <h3 class="text-2xl sm:text-3xl font-bold mt-1">Schul-E-Mail</h3>
+          <p class="text-sm text-white/75 mt-1">Deine Schuladresse und Kontodaten</p>
+        </div>
+        <div class="space-y-3 pt-1">
+          <input id="l-mail" type="email" class="lg-inp" placeholder="Schul-E-Mail-Adresse" value="${esc(d.email)}" oninput="S.regDraft.email=this.value">
+          <input id="l-name" class="lg-inp" placeholder="Vor- und Nachname" value="${esc(d.name)}" oninput="S.regDraft.name=this.value">
+          <select id="l-class" class="lg-inp" onchange="S.regDraft.klass=this.value">${CLASSES.filter(c=>c!=='Alle').map(c=>`<option ${d.klass===c?'selected':''}>${c}</option>`).join('')}</select>
+        </div>
+        <div class="pt-2">
+          <button type="button" class="lg-cta w-full" onclick="regNext()">Weiter</button>
+        </div>
+      </div>`;
+    }else if(S.regStep===2){
+      stepForm=`<div class="space-y-4">
+        <div>
+          <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-200">Schritt 2 / 4</div>
+          <h3 class="text-2xl sm:text-3xl font-bold mt-1">Medienscouts-Passwort</h3>
+          <p class="text-sm text-white/75 mt-1">Lege dein persönliches Passwort fest (mindestens 6 Zeichen).</p>
+        </div>
+        <div class="space-y-3 pt-1">
+          <div class="relative">
+            <input id="l-pw" type="${S.regShowPw?'text':'password'}" autocomplete="new-password" class="lg-inp pr-12" placeholder="Medienscouts-Passwort" value="${esc(d.pw)}" oninput="S.regDraft.pw=this.value">
+            <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white text-xs px-2 py-1 cursor-pointer" onclick="toggleAuthPwVis()">${S.regShowPw?'Verbergen':'Zeigen'}</button>
+          </div>
+          <input id="l-pw2" type="${S.regShowPw?'text':'password'}" autocomplete="new-password" class="lg-inp" placeholder="Medienscouts-Passwort bestätigen" value="${esc(d.pw2)}" oninput="S.regDraft.pw2=this.value" onkeydown="if(event.key==='Enter')regNext()">
+          <div class="lg-subcard p-3.5 flex items-start gap-3 text-xs text-white/80">
+            ${ic('key','w-6 h-6 shrink-0')}
+            <span>Mit diesem <b>Medienscouts-Passwort</b> meldest du dich an und entschlüsselst bei Bedarf Ende-zu-Ende-verschlüsselte Passwort-Resets.</span>
+          </div>
+        </div>
+        <div class="flex gap-2.5 pt-2">
+          <button type="button" class="lg-ghost" onclick="regBack()">Zurück</button>
+          <button type="button" class="lg-cta flex-1" onclick="regNext()">Weiter</button>
+        </div>
+      </div>`;
+    }else if(S.regStep===3){
+      stepForm=`<div class="space-y-4">
+        <div>
+          <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-200">Schritt 3 / 4</div>
+          <h3 class="text-2xl sm:text-3xl font-bold mt-1">Hinweise</h3>
+          <p class="text-sm text-white/75 mt-1">Wichtige Hinweise für dein Schulportal-Konto bestätigen</p>
+        </div>
+        <div class="space-y-3 pt-1">
+          <label class="lg-subcard p-4 flex items-start gap-3 cursor-pointer text-sm">
+            <input id="l-ack1" type="checkbox" class="mt-1 w-4 h-4 accent-emerald-400 shrink-0" ${d.ack1?'checked':''} onchange="S.regDraft.ack1=this.checked">
+            <span class="text-white/90 leading-relaxed">Ich merke mir mein <b>Medienscouts-Passwort</b> sorgfältig, weil es auch meine Ende-zu-Ende-verschlüsselten Zugangsdaten im Chat schützt.</span>
+          </label>
+          <label class="lg-subcard p-4 flex items-start gap-3 cursor-pointer text-sm">
+            <input id="l-ack2" type="checkbox" class="mt-1 w-4 h-4 accent-emerald-400 shrink-0" ${d.ack2?'checked':''} onchange="S.regDraft.ack2=this.checked">
+            <span class="text-white/90 leading-relaxed">Ich gehe im Ticket-Support und auf dem Schulportal respektvoll und ehrlich mit anderen um.</span>
+          </label>
+        </div>
+        <div class="flex gap-2.5 pt-2">
+          <button type="button" class="lg-ghost" onclick="regBack()">Zurück</button>
+          <button type="button" class="lg-cta flex-1" onclick="regNext()">Weiter</button>
+        </div>
+      </div>`;
+    }else{
+      stepForm=`<div class="space-y-4">
+        <div>
+          <div class="text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-200">Schritt 4 / 4</div>
+          <h3 class="text-2xl sm:text-3xl font-bold mt-1">Zweite E-Mail</h3>
+          <p class="text-sm text-white/75 mt-1">Optional eine zweite Adresse hinterlegen (kann auch leer bleiben).</p>
+        </div>
+        <div class="space-y-3 pt-1">
+          <input id="l-mail2" type="email" class="lg-inp" placeholder="Zweite E-Mail-Adresse (optional)" value="${esc(d.backupEmail)}" oninput="S.regDraft.backupEmail=this.value" onkeydown="if(event.key==='Enter')submitAuth()">
+          <div class="lg-subcard p-3.5 flex items-start gap-3 text-xs text-white/80">
+            ${ic('shield','w-6 h-6 shrink-0')}
+            <span>Zusammenfassung: <b>${esc(d.name)}</b> · ${esc(d.klass)} · ${esc(d.email)}</span>
+          </div>
+        </div>
+        <div class="flex gap-2.5 pt-2">
+          <button type="button" class="lg-ghost" onclick="regBack()">Zurück</button>
+          <button type="button" class="lg-cta flex-1" onclick="submitAuth()">Konto erstellen</button>
+        </div>
+      </div>`;
+    }
+
+    bodyHtml=`<div class="grid md:grid-cols-12 gap-6 items-start max-w-4xl mx-auto w-full">
+      <div class="md:col-span-4">${stepSidebar}</div>
+      <div class="md:col-span-8 lg-card p-6 sm:p-8">
+        ${stepForm}
+        <div id="auth-inline-msg" class="text-center"></div>
+      </div>
+    </div>`;
+  }else{
+    bodyHtml=`<div class="lg-card p-6 sm:p-8 max-w-md mx-auto w-full space-y-4">
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-white/75 block mb-1.5 font-medium">Schul-E-Mail-Adresse</label>
+          <input id="l-mail" type="email" class="lg-inp" placeholder="name@schule.de" value="${S.needSetup?'admin@schule.de':esc(d.email||'')}">
+        </div>
+        ${mode!=='reset'?`<div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs text-white/75 font-medium">Medienscouts-Passwort</label>
+            ${mode==='login'?`<button type="button" class="text-xs text-cyan-200 hover:underline cursor-pointer" onclick="openAuth('reset')">Passwort vergessen?</button>`:''}
+          </div>
+          <div class="relative">
+            <input id="l-pw" type="${S.regShowPw?'text':'password'}" class="lg-inp pr-12" placeholder="••••••••" value="${S.needSetup?'scout123':''}" onkeydown="if(event.key==='Enter')submitAuth()">
+            <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white text-xs px-2 py-1 cursor-pointer" onclick="toggleAuthPwVis()">${S.regShowPw?'Verbergen':'Zeigen'}</button>
+          </div>
+        </div>`:''}
+        <button type="button" class="lg-cta w-full mt-1" onclick="submitAuth()">${mode==='login'?'Anmelden':'Reset-E-Mail senden'}</button>
+        ${mode==='reset'?`<button type="button" class="lg-ghost w-full" onclick="openAuth('login')">Zurück zum Login</button>`:''}
+      </div>
+      <div id="auth-inline-msg" class="text-center"></div>
+      ${S.needSetup?`<div class="lg-subcard p-4 border-amber-300/40 bg-amber-500/15 text-xs space-y-2.5 text-white">
+        <div><b>Ersteinrichtung:</b> Noch kein Admin angelegt. Klicke hier, um den ersten Haupt-Admin samt Beispieldaten einzurichten:</div>
+        <button type="button" class="lg-cta w-full !bg-none !bg-amber-600 hover:!bg-amber-500" onclick="setup()">Ersten Admin & Startdaten anlegen</button>
+      </div>`:''}
+    </div>`;
+  }
+
+  host.innerHTML=`<div class="fixed inset-0 z-[99990] lg-fullscreen-auth overflow-y-auto text-white">
+    <div class="min-h-full flex flex-col max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+      <div class="flex items-center justify-between gap-3">
+        <button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-5 h-5"></i></button>
+        <div class="text-xs font-medium tracking-wide text-white/75">${esc(S.settings.schoolName||'Schulportal · Digitale Hilfe')}</div>
+        <div class="w-10"></div>
       </div>
 
-      ${regAllowed&&mode!='reset'?`<div class="grid grid-cols-2 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800 text-xs font-medium">
-        <button class="py-2 rounded-lg cursor-pointer ${mode=='login'?'bg-white dark:bg-slate-900 shadow-xs':''}" onclick="openAuth('login')">Anmelden</button>
-        <button class="py-2 rounded-lg cursor-pointer ${mode=='reg'?'bg-white dark:bg-slate-900 shadow-xs':''}" onclick="openAuth('reg')">Registrieren</button>
-      </div>`:''}
-
-      ${mode=='reg'?registrationWizardView():loginFormView(mode)}
-
-      ${S.needSetup?`<div class="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs space-y-2">
-        <b>Ersteinrichtung:</b> Noch kein Admin angelegt. Klicke hier, um den ersten Haupt-Admin samt Beispieldaten einzurichten:
-        <button class="btn w-full !bg-amber-600 hover:!bg-amber-500" onclick="setup()">Ersten Admin & Startdaten anlegen</button>
-      </div>`:''}
-    </div>`,mode==='reg');
-};
-
-
-function loginFormView(mode){
- let h='<div><label class="text-xs opacity-70 block mb-1">E-Mail-Adresse</label><input id="l-mail" type="email" class="inp" placeholder="name@schule.de" value="'+(S.needSetup?'admin@schule.de':'')+'"></div>';
- if(mode!=='reset')h+='<div><div class="flex items-center justify-between mb-1"><label class="text-xs opacity-70">Passwort</label>'+(mode==='login'?'<button class="text-xs text-blue-500 hover:underline cursor-pointer" onclick="openAuth(\'reset\')">Passwort vergessen?</button>':'')+'</div><input id="l-pw" type="password" class="inp" placeholder="••••••••" value="'+(S.needSetup?'scout123':'')+'" onkeydown="if(event.key===\'Enter\')submitAuth()"></div>';
- h+='<button class="btn w-full" onclick="submitAuth()">'+(mode==='login'?'Anmelden':'Reset-E-Mail senden')+'</button>';
- if(mode==='reset'){
-  h+='<button class="text-xs text-teal-700 dark:text-teal-300 hover:underline w-full" onclick="openRecoveryInfo()">Ich habe keinen Zugriff auf Schulportal / WebWeaver</button>';
-  h+='<button class="btn2 w-full" onclick="openAuth(\'login\')">Zurück zum Login</button>';
- }
- return '<div class="space-y-3">'+h+'</div>';
-}
-function registrationWizardView(){
- const d=S.regDraft||{},step=S.regStep||1,warnings=S.settings.registrationWarnings||'Bitte nutze ein sicheres Passwort und teile es mit niemandem.';
- const names=['Schul-E-Mail','Passwort','Hinweise','Zweite E-Mail'];
- const descriptions=['Deine Schuladresse und Kontodaten','Lege dein persönliches Passwort fest','Wichtige Hinweise bestätigen','Optional eine zweite Adresse hinterlegen'];
- let h='<div class="grid grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)] gap-8 min-h-[70vh]">';
- h+='<aside class="rounded-3xl bg-slate-100/80 dark:bg-slate-800/60 p-5 sm:p-7"><div class="text-xs uppercase tracking-[.18em] opacity-55 font-bold mb-6">Konto erstellen</div><div class="space-y-1">';
- for(let n=1;n<=4;n++){
-  h+='<div class="flex gap-4 min-h-[92px]"><div class="flex flex-col items-center"><span class="w-11 h-11 shrink-0 rounded-full border-2 flex items-center justify-center text-base font-bold '+(n===step?'bg-teal-700 border-teal-700 text-white':n<step?'bg-teal-700/15 border-teal-600 text-teal-700 dark:text-teal-300':'border-slate-300 dark:border-slate-600 opacity-60')+'">'+(n<step?'✓':n)+'</span>'+(n<4?'<span class="w-1 flex-1 min-h-[42px] rounded-full '+(n<step?'bg-teal-600':'bg-slate-300 dark:bg-slate-600')+'"></span>':'')+'</div><div class="pt-1"><div class="font-semibold '+(n===step?'text-teal-700 dark:text-teal-300':'')+'">'+names[n-1]+'</div><p class="text-xs opacity-60 mt-1 leading-relaxed">'+descriptions[n-1]+'</p></div></div>';
- }
- h+='</div><div class="mt-4 pt-4 border-t border-slate-300/70 dark:border-slate-600/70 text-xs opacity-60">Schritt '+step+' von 4</div></aside>';
- h+='<main class="flex flex-col justify-center py-4 sm:px-5"><div class="max-w-2xl w-full mx-auto"><div class="mb-7"><div class="text-xs uppercase tracking-widest text-teal-700 dark:text-teal-300 font-bold mb-2">Schritt '+step+' / 4</div><h2 class="text-2xl sm:text-3xl font-bold">'+names[step-1]+'</h2><p class="text-sm opacity-65 mt-2">'+descriptions[step-1]+'</p></div>';
- if(step===1)h+='<div class="space-y-4"><input id="reg-email" type="email" class="inp" placeholder="Schul-E-Mail-Adresse" value="'+esc(d.email||'')+'"><input id="reg-name" class="inp" placeholder="Vor- und Nachname" value="'+esc(d.name||'')+'"><select id="reg-class" class="inp">'+CLASSES.filter(c=>c!=='Alle').map(c=>'<option '+((d.klass||'Klasse 8')===c?'selected':'')+'>'+esc(c)+'</option>').join('')+'</select></div>';
- if(step===2)h+='<div class="space-y-4"><input id="reg-password" type="password" class="inp" autocomplete="new-password" placeholder="Passwort"><input id="reg-password-repeat" type="password" class="inp" autocomplete="new-password" placeholder="Passwort wiederholen"></div>';
- if(step===3)h+='<div class="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-5 text-sm whitespace-pre-wrap leading-relaxed">'+esc(warnings)+'</div><label class="flex gap-3 text-sm mt-4"><input id="reg-accept" type="checkbox" class="mt-1" '+(d.acceptedWarnings?'checked':'')+'>Ich habe die Hinweise gelesen und akzeptiere sie.</label>';
- if(step===4)h+='<p class="text-sm opacity-75 mb-3">Optional: Hinterlege eine private E-Mail-Adresse für einen späteren Wiederherstellungsweg.</p><input id="reg-recovery-email" type="email" class="inp" placeholder="Private E-Mail-Adresse" value="'+esc(d.recoveryEmail||'')+'"><p class="text-xs text-amber-700 dark:text-amber-300 mt-3">Die Adresse wird zunächst nur gespeichert und ist noch nicht bestätigt. Sie kann noch keine Firebase-Passwortzurücksetzung auslösen.</p>';
- h+='<div class="flex gap-3 mt-8">'+(step>1?'<button class="btn2 min-w-32" onclick="registrationBack()">Zurück</button>':'')+'<button class="btn flex-1" onclick="'+(step===4?'submitAuth()':'registrationNext()')+'">'+(step===4?'Konto erstellen':'Weiter')+'</button></div></div></main></div>';
- return h;
-}
-window.registrationNext=()=>{
- const d={...(S.regDraft||{})},step=S.regStep;
- if(step===1){d.email=val('reg-email');d.name=val('reg-name');d.klass=val('reg-class');if(!d.email||!d.name)return toast('Bitte E-Mail-Adresse und Namen eintragen.');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email))return toast('Bitte eine gültige E-Mail-Adresse eingeben.');}
- if(step===2){d.password=$('#reg-password')?.value||'';const again=$('#reg-password-repeat')?.value||'';if(d.password.length<6)return toast('Das Passwort muss mindestens 6 Zeichen haben.');if(d.password!==again)return toast('Die Passwörter stimmen nicht überein.');}
- if(step===3){d.acceptedWarnings=!!$('#reg-accept')?.checked;if(!d.acceptedWarnings)return toast('Bitte bestätige die Hinweise.');}
- S.regDraft=d;S.regStep=Math.min(4,step+1);openAuth('reg');
-};
-window.registrationBack=()=>{
- const d={...(S.regDraft||{})};if(S.regStep===4)d.recoveryEmail=val('reg-recovery-email');
- S.regDraft=d;S.regStep=Math.max(1,(S.regStep||1)-1);openAuth('reg');
+      <div class="flex-1 flex flex-col justify-center py-6 space-y-6">
+        <div class="text-center space-y-2.5">
+          <div class="lg-icon-halo mx-auto">${ic(heroIco,'w-11 h-11')}</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight">${heroTitle}</h2>
+          <p class="text-sm text-white/75 max-w-md mx-auto">${heroSub}</p>
+        </div>
+        ${switcher}
+        ${bodyHtml}
+      </div>
+    </div>
+  </div>`;
+  icons();
 };
 
 let securityBlockSticky=false;
 function showSecurityBlock(countryName,message){
   securityBlockSticky=true;
   let box=document.getElementById('security-block-screen');
-  if(!box){box=document.createElement('div');box.id='security-block-screen';box.className='fixed inset-0 z-[9999] flex items-center justify-center p-5 bg-slate-950/95';document.body.appendChild(box)}
+  if(!box){box=document.createElement('div');box.id='security-block-screen';box.className='fixed inset-0 z-[99995] lg-fullscreen-auth flex items-center justify-center p-5';document.body.appendChild(box)}
   const country=countryName||'Unbekannt';
-  box.innerHTML=`<div class="w-full max-w-md rounded-3xl border border-rose-400/40 bg-slate-900 p-7 text-center text-white shadow-2xl">
-    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/15 text-rose-400 text-3xl">⛔</div>
-    <h1 class="text-2xl font-bold mb-3">Zugriff gesperrt</h1>
-    <p class="text-sm leading-6 text-slate-200">${message||('Wir haben einen ungewöhnlichen Zugriff aus '+country+' erkannt. Der Zugriff auf diese Webseite wurde aus Sicherheitsgründen blockiert.')}</p>
-    <p class="mt-5 text-xs text-slate-400">Erkannter Standort: <b class="text-rose-300">${esc(country)}</b></p>
-    <p class="mt-5 text-xs text-slate-400">Wenn du glaubst, dass dies ein Fehler ist, wende dich bitte an die Schule.</p>
+  box.innerHTML=`<div class="lg-surface w-full max-w-md p-7 text-center text-white space-y-4">
+    <div class="lg-icon-halo mx-auto">${ic('shield','w-12 h-12')}</div>
+    <h1 class="text-2xl font-bold">Zugriff gesperrt</h1>
+    <p class="text-sm leading-6 text-white/85">${message||('Wir haben einen ungewöhnlichen Zugriff aus '+country+' erkannt. Der Zugriff auf diese Webseite wurde aus Sicherheitsgründen blockiert.')}</p>
+    <p class="text-xs text-white/70">Erkannter Standort: <b class="text-rose-200">${esc(country)}</b></p>
+    <p class="text-xs text-white/65">Wenn du glaubst, dass dies ein Fehler ist, wende dich bitte an die Schule.</p>
   </div>`;
   const app=document.getElementById('app');if(app)app.style.display='none';
 }
@@ -857,24 +1033,20 @@ function getSecurityDeviceId(){
   if(!id){id=(crypto.randomUUID?crypto.randomUUID():('dev-'+Date.now()+'-'+Math.random().toString(36).slice(2)));localStorage.setItem(key,id);}
   return id;
 }
-window.openRecoveryInfo=()=>{
- const intro=esc(S.settings.recoveryIntro||'Wenn du keinen Zugriff mehr auf Schulportal oder WebWeaver hast, wende dich an die Medienscouts oder die Administration.');
- const contact=String(S.settings.recoveryContact||'').trim();
- const methods='<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3"><b>1. Medienscout verifizieren</b><p class="text-xs opacity-70 mt-1">Die Identität wird persönlich durch einen berechtigten Medienscout oder Admin geprüft. Das Code-Verfahren wird als nächster Schritt ergänzt.</p></div><div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3"><b>2. Zweite E-Mail-Adresse</b><p class="text-xs opacity-70 mt-1">Diese Möglichkeit wird vorbereitet. Eine hinterlegte Adresse ist aktuell noch nicht bestätigt und kann noch keinen Passwort-Reset auslösen.</p></div><div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3"><b>3. Admin-Notfallprüfung</b><p class="text-xs opacity-70 mt-1">Die Administration kann die Anfrage außerhalb des normalen Login-Systems prüfen.</p></div>';
- modal('<div class="space-y-4"><h2 class="text-lg font-bold">Kein Zugriff mehr?</h2><p class="text-sm opacity-75">'+intro+'</p>'+methods+(contact?'<p class="text-sm">Kontakt: <a class="text-teal-600 underline" href="mailto:'+esc(contact)+'">'+esc(contact)+'</a></p>':'')+'<button class="btn w-full" onclick="closeModal()">Schließen</button></div>');
-};
-
 window.submitAuth=async()=>{
-  let email=val('l-mail'),pw=val('l-pw'),name=val('l-name'),klass=val('l-class');
-  if(S.authMode==='reg'){email=S.regDraft?.email||'';pw=S.regDraft?.password||'';name=S.regDraft?.name||'';klass=S.regDraft?.klass||'Klasse 8';S.regDraft.recoveryEmail=val('reg-recovery-email');if(S.regDraft.recoveryEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(S.regDraft.recoveryEmail))return toast('Bitte eine gültige zweite E-Mail-Adresse eingeben.');}
-  if(!email)return toast('Bitte E-Mail-Adresse eingeben.');
+  syncAuthDraft();
+  const isReg=S.authMode==='reg';
+  const email=isReg?(S.regDraft.email||'').trim():val('l-mail');
+  const pw=isReg?(S.regDraft.pw||''):($('#l-pw')?.value||'');
+  const name=(S.regDraft.name||'').trim(),klass=S.regDraft.klass||'Klasse 8',backupEmail=(S.regDraft.backupEmail||'').trim();
+  if(!email){setAuthInlineMsg('Bitte E-Mail-Adresse eingeben.');return toast('Bitte E-Mail-Adresse eingeben.');}
   try{
     let securityPreflight=null;
-    if(S.authMode==='login'||S.authMode==='reg'){
+    if(S.authMode==='login'||isReg){
       const deviceId=getSecurityDeviceId();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(deviceId),{method:'GET',cache:'no-store'});
       securityPreflight=await check.json();
       if(check.status===403&&securityPreflight.blocked){showSecurityBlock(securityPreflight.countryName,securityPreflight.error);return;}
-      if(!check.ok){toast(securityPreflight.error||'Sicherheitsprüfung gerade nicht verfügbar. Bitte später erneut versuchen.');return;}
+      if(!check.ok){const em=securityPreflight.error||'Sicherheitsprüfung gerade nicht verfügbar. Bitte später erneut versuchen.';setAuthInlineMsg(em);return toast(em);}
     }
     if(S.authMode=='reset'){
       await sendPasswordResetEmail(auth,email);
@@ -882,18 +1054,20 @@ window.submitAuth=async()=>{
       openAuth('login');
       return;
     }
-    if(!pw)return toast('Bitte Passwort eingeben.');
-    if(S.authMode=='reg'){
+    if(!pw){setAuthInlineMsg('Bitte Medienscouts-Passwort eingeben.');return toast('Bitte Medienscouts-Passwort eingeben.');}
+    if(isReg){
       if(!S.settings.allowReg)return toast('Selbst-Registrierung ist deaktiviert.');
-      if(!name)return toast('Bitte gib deinen Namen an.');
-      if(!S.regDraft?.acceptedWarnings)return toast('Bitte bestätige die Hinweise.');
+      if(!name){setAuthInlineMsg('Bitte gib deinen Namen an.');return toast('Bitte gib deinen Namen an.');}
+      if(pw.length<6){setAuthInlineMsg('Das Medienscouts-Passwort muss mindestens 6 Zeichen lang sein.');return toast('Das Medienscouts-Passwort muss mindestens 6 Zeichen lang sein.');}
+      if(backupEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(backupEmail)){setAuthInlineMsg('Bitte prüfe die zweite E-Mail-Adresse oder lasse das Feld leer.');return toast('Bitte gültige zweite E-Mail-Adresse eingeben.');}
       const c=await createUserWithEmailAndPassword(auth,email,pw);
-      await DB.set('users',c.user.uid,{email,name,klass:klass||'Klasse 8',role:'Schüler',createdAt:Date.now(),recoveryEmail:String(S.regDraft?.recoveryEmail||'').trim(),recoveryEmailVerified:false});
-      S.regDraft={};S.regStep=1;
+      const userDoc={email,name,klass,role:'Schüler',createdAt:Date.now()};
+      if(backupEmail)userDoc.backupEmail=backupEmail;
+      await DB.set('users',c.user.uid,userDoc);
     }else{
       await signInWithEmailAndPassword(auth,email,pw);
     }
-    if((S.authMode==='login'||S.authMode==='reg')&&auth.currentUser){
+    if((S.authMode==='login'||isReg)&&auth.currentUser){
       saveAuthCookieBackup(auth.currentUser);
       try{
         const token=await auth.currentUser.getIdToken();
@@ -903,7 +1077,7 @@ window.submitAuth=async()=>{
     }
     closeModal();
     if(S.pendingView){S.view=S.pendingView;S.pendingView=null;render()}
-  }catch(e){toast('Fehler: '+e.code)}
+  }catch(e){setAuthInlineMsg('Fehler: '+(e.code||e.message));toast('Fehler: '+(e.code||e.message))}
 };
 window.logout=()=>{closeModal();closeChat();clearAuthCookieBackup();signOut(auth)};
 
@@ -933,14 +1107,16 @@ window.createTicket=async()=>{
 
 // Admin startet direkt ein Gespräch mit einem Schüler
 window.openStartUserTicketModal=(uid,name,email)=>{
-  modal(`<button class="absolute top-4 right-4 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
+  modal(`<button type="button" class="lg-close absolute top-4 right-4" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button>
     <div class="space-y-4">
-      <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="send" class="w-5 h-5 text-blue-500"></i>Schüler direkt anschreiben</h2>
-      <div class="text-xs opacity-75">Empfänger: <b>${esc(name)}</b> (${esc(email)})</div>
-      <div><label class="text-xs opacity-70 block mb-1">Kategorie</label><select id="adm-t-cat" class="inp">${CATS.filter(c=>c!=='Passwort zurücksetzen').map(c=>`<option>${c}</option>`).join('')}</select></div>
-      <div><label class="text-xs opacity-70 block mb-1">Betreff</label><input id="adm-t-subj" class="inp" placeholder="Nachricht der Medienscouts"></div>
-      <div><label class="text-xs opacity-70 block mb-1">Erste Nachricht</label><textarea id="adm-t-msg" rows="4" class="inp" placeholder="Hallo ${esc(name)}, …"></textarea></div>
-      <button class="btn w-full" data-uid="${esc(uid)}" data-name="${esc(name)}" data-email="${esc(email)}" onclick="startTicketForStudent(this.dataset.uid,this.dataset.name,this.dataset.email)">Ticket-Chat starten</button>
+      <div class="flex items-center gap-3 pr-10">
+        <div class="w-11 h-11 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">${ic('ticket','w-7 h-7')}</div>
+        <div><h2 class="text-lg font-bold">Schüler direkt anschreiben</h2><div class="text-xs opacity-75">Empfänger: <b>${esc(name)}</b> (${esc(email)})</div></div>
+      </div>
+      <div><label class="text-xs opacity-75 block mb-1">Kategorie</label><select id="adm-t-cat" class="inp">${CATS.filter(c=>c!=='Passwort zurücksetzen').map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div><label class="text-xs opacity-75 block mb-1">Betreff</label><input id="adm-t-subj" class="inp" placeholder="Nachricht der Medienscouts"></div>
+      <div><label class="text-xs opacity-75 block mb-1">Erste Nachricht</label><textarea id="adm-t-msg" rows="4" class="inp" placeholder="Hallo ${esc(name)}, …"></textarea></div>
+      <button type="button" class="btn w-full" data-uid="${esc(uid)}" data-name="${esc(name)}" data-email="${esc(email)}" onclick="startTicketForStudent(this.dataset.uid,this.dataset.name,this.dataset.email)">Ticket-Chat starten</button>
     </div>`);
 };
 
@@ -974,15 +1150,15 @@ function renderChatMessages(id,t,asAdmin,ms,pwc){
     if(isOwner){
       if(live&&pwc.e2ee){
         privateCard=dec
-          ? `<section class="glass p-4 border-2 border-amber-400 space-y-2"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Deine Zugangsdaten</div></div><div class="text-sm">App: <b>${esc(dec.platform||pwc.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(dec.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">${S.revealedChatPw[id]?esc(dec.password):'••••••••••'}</b></div><div class="flex flex-wrap gap-2 pt-1"><button type="button" class="btn2" onclick="revealTicketPassword('${id}')">${S.revealedChatPw[id]?'Verbergen':'Einblenden'}</button><button type="button" class="btn2" onclick="copyTicketPassword('${id}')">Kopieren</button><button type="button" class="btn2 !text-rose-500 ml-auto" onclick="burnTicketPassword('${id}')">Nach Nutzung endgültig löschen</button></div></section>`
-          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib dein <b>Medienscouts-Passwort</b> ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="current-password" class="inp flex-1 min-w-[160px]" placeholder="Dein Medienscouts-Passwort…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
+          ? `<section class="glass p-4 border-2 border-amber-400 space-y-2"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Deine entschlüsselten Zugangsdaten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-entschlüsselt</span></div><div class="text-sm">App: <b>${esc(dec.platform||pwc.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(dec.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">${S.revealedChatPw[id]?esc(dec.password):'••••••••••'}</b></div><div class="flex flex-wrap gap-2 pt-1"><button type="button" class="btn2" onclick="revealTicketPassword('${id}')">${S.revealedChatPw[id]?'Verbergen':'Einblenden'}</button><button type="button" class="btn2" onclick="copyTicketPassword('${id}')">Kopieren</button><button type="button" class="btn2 !text-rose-500 ml-auto" onclick="burnTicketPassword('${id}')">Nach Nutzung endgültig löschen</button></div></section>`
+          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib dein <b>Medienscouts-Passwort</b> ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="current-password" class="inp flex-1 min-w-[160px]" placeholder="Dein Medienscouts-Passwort…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
       }else if(live){
         privateCard=`<section class="glass p-4 text-xs text-amber-500 border border-amber-500/30">⚠️ Dieses Ticket stammt aus einer älteren unverschlüsselten Version. Bitte fordere ein neues verschlüsseltes Passwort-Ticket an.</section>`;
       }else if(!live){
         privateCard=`<section class="glass p-4 text-xs opacity-70 border border-slate-500/30">🔐 Die verschlüsselten Zugangsdaten wurden bereits gelöscht oder sind abgelaufen.</section>`;
       }
     }else{
-      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten gesendet</div></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Medienscouts-Passwort entschlüsseln.</div></section>`;
+      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten verschlüsselt gesendet</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Medienscouts-Passwort entschlüsseln.</div></section>`;
     }
   }
   l.innerHTML=(visibleMs.map(m=>{
@@ -1036,13 +1212,15 @@ window.openChat=async(id,asAdmin)=>{
         </div>
       </div>
 
-      ${t.passwordReset?'<span class="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-3 py-1.5">🔒 Ende-zu-Ende</span>':''}${asAdmin?`<div class="flex items-center gap-2 shrink-0">
+      ${asAdmin?`<div class="flex items-center gap-2 shrink-0">
         <button type="button" class="btn2 !text-blue-500" onclick="claimTicket('${id}')"><i data-lucide="hand" class="w-4 h-4"></i><span class="hidden sm:inline">Ich übernehme</span></button>
         <select class="inp !w-auto !py-1.5 !px-2.5 text-xs" onchange="updStatus('${id}',this.value)">
           ${['Neu','In Bearbeitung','Gelöst'].map(s=>`<option ${s==t.status?'selected':''}>${s}</option>`).join('')}
         </select>
       </div>`:''}
     </div>
+    ${t.passwordReset?`<div class="bg-emerald-600/15 border-b border-emerald-500/30 px-4 py-2 text-xs text-center text-emerald-700 dark:text-emerald-300 font-medium">🔒 <b>Ende-zu-Ende-verschlüsselt</b> · Neue Passwörter werden im Browser verschlüsselt und niemals im Klartext in Firebase gespeichert.</div>`:''}
+
     <div id="c-list" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 max-w-4xl w-full mx-auto"></div>
 
     <div class="glass !rounded-none border-x-0 border-b-0 p-3 sm:p-4">
@@ -1175,19 +1353,19 @@ const defaultSlashCommands=()=>[{id:'passwort',name:'passwort',label:'Passwort w
 window.openSlashEditor=id=>{
   const list=S.settings.slashCommands||defaultSlashCommands(),c=list.find(x=>x.id===id)||{id:'cmd-'+Date.now(),name:'neuer-befehl',label:'Neue Nachricht',active:true,requiresPassword:false,roles:['Admin','Medienscout'],message:'',image:''};
   const isPw=c.name==='passwort';
-  modal(`<div class="space-y-3"><div class="flex items-center justify-between"><h3 class="font-bold text-lg">${id?'Befehl bearbeiten':'Neuen Befehl erstellen'}</h3><button class="btn2" onclick="closeModal()">Schließen</button></div>
+  modal(`<div class="space-y-4"><div class="flex items-center justify-between gap-3"><div class="flex items-center gap-3">${ic(isPw?'key':'shield','w-8 h-8')}<h3 class="font-bold text-lg">${id?'Befehl bearbeiten':'Neuen Befehl erstellen'}</h3></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div>
     <label class="block text-xs">Befehlsname (ohne /)<input id="sc-name" class="inp mt-1" value="${esc(c.name)}" placeholder="passwort" ${isPw?'readonly':''}></label>
     <label class="block text-xs">Bezeichnung<input id="sc-label" class="inp mt-1" value="${esc(c.label)}"></label>
     <label class="block text-xs">Chat-Nachricht<textarea id="sc-message" rows="4" class="inp mt-1" placeholder="Nachricht an den Schüler…">${esc(c.message||'')}</textarea></label>
     <div class="text-xs">Bild (optional)
-      <div id="sc-image-prev" class="mt-1">${c.image?`<img src="${c.image}" class="h-20 rounded-lg">`:''}</div>
+      <div id="sc-image-prev" class="mt-1">${c.image?`<img src="${c.image}" class="h-20 rounded-xl">`:''}</div>
       <label class="btn2 mt-1"><i data-lucide="image" class="w-4 h-4"></i>Bild auswählen<input type="file" accept="image/*" hidden onchange="pickSlashImage(this)"></label>
-      <button class="btn2 mt-1 !text-rose-500" onclick="window._slashImg='';$('#sc-image-prev').innerHTML=''">Bild entfernen</button>
+      <button type="button" class="btn2 mt-1 !text-rose-400" onclick="window._slashImg='';$('#sc-image-prev').innerHTML=''">Bild entfernen</button>
     </div>
-    <label class="flex items-center gap-2 text-sm"><input id="sc-active" type="checkbox" ${c.active?'checked':''}> Befehl aktiviert</label>
-    <label class="flex items-center gap-2 text-sm"><input id="sc-password" type="checkbox" ${c.requiresPassword?'checked':''} ${isPw?'disabled':''}> Vor dem Senden Zugangsdaten-Felder anzeigen</label>
+    <label class="flex items-center gap-2 text-sm"><input id="sc-active" type="checkbox" class="accent-emerald-400" ${c.active?'checked':''}> Befehl aktiviert</label>
+    <label class="flex items-center gap-2 text-sm"><input id="sc-password" type="checkbox" class="accent-emerald-400" ${c.requiresPassword?'checked':''} ${isPw?'disabled':''}> Vor dem Senden Zugangsdaten-Felder anzeigen</label>
     <label class="block text-xs">Wer darf den Befehl nutzen?<select id="sc-roles" class="inp mt-1"><option value="both" ${(c.roles||[]).length!==1?'selected':''}>Admin und Medienscout</option><option value="admin" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Admin'?'selected':''}>Nur Admin</option><option value="scout" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Medienscout'?'selected':''}>Nur Medienscout</option></select></label>
-    <button class="btn w-full" data-id="${esc(c.id)}" onclick="saveSlashCommand(this.dataset.id)">Befehl speichern</button></div>`);
+    <button type="button" class="btn w-full" data-id="${esc(c.id)}" onclick="saveSlashCommand(this.dataset.id)">Befehl speichern</button></div>`);
   window._slashImg=c.image||'';
 };
 window.pickSlashImage=async inp=>{
@@ -1217,11 +1395,11 @@ window.runSlashCommand=async(ticketId,input)=>{
   if(name==='passwort'&&!ticket.passwordReset)return toast('Der Passwort-Befehl kann nur in Passwort-Tickets genutzt werden.');
   if(cmd.requiresPassword&&!ticket.e2eePublicKey)return toast('Dieses ältere Ticket hat keinen Verschlüsselungs-Schlüssel. Bitte den Schüler bitten, ein neues Passwort-Ticket zu öffnen.');
   const guideText=name==='passwort'?(S.settings.pwGuideText||cmd.message||''):(cmd.message||''),guideImg=name==='passwort'?(S.settings.pwGuideImage||cmd.image||''):(cmd.image||'');
-  modal(`<div class="space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3>${cmd.requiresPassword?'<span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500">🔒 Ende-zu-Ende-verschlüsselt</span>':''}</div><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}${ticket.passwordPlatform?' · App: <b>'+esc(ticket.passwordPlatform)+'</b>':''}</p>
+  modal(`<div class="space-y-4"><div class="flex items-center justify-between gap-2"><div class="flex items-center gap-3 flex-wrap">${ic(cmd.requiresPassword?'key':'ticket','w-8 h-8')}<h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3>${cmd.requiresPassword?'<span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">🔒 Ende-zu-Ende-verschlüsselt</span>':''}</div><button type="button" class="lg-close shrink-0" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div><p class="text-xs opacity-75">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}${ticket.passwordPlatform?' · App: <b>'+esc(ticket.passwordPlatform)+'</b>':''}</p>
     ${cmd.requiresPassword?'<label class="block text-xs">Benutzername<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
-    <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(guideText)}</div>${guideImg?'<img src="'+guideImg+'" class="rounded-xl max-h-48 object-contain">':''}
-    ${cmd.requiresPassword?'<p class="text-xs text-emerald-600 dark:text-emerald-400">🔒 Benutzername & Passwort werden direkt in deinem Browser mit dem öffentlichen Schlüssel des Schülers verschlüsselt. Nur der Schüler kann sie im Chat mit seinem Medienscouts-Passwort entschlüsseln.</p>':''}
-    <div class="flex gap-2"><button type="button" class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button type="button" class="btn flex-1" data-t="${esc(ticketId)}" data-c="${esc(cmd.id)}" onclick="submitSlashCommand(this.dataset.t,this.dataset.c)">${cmd.requiresPassword?'Verschlüsselt senden':'Nachricht senden'}</button></div></div>`);
+    <div class="lg-subcard p-3.5 text-sm whitespace-pre-wrap">${esc(guideText)}</div>${guideImg?'<img src="'+guideImg+'" class="rounded-xl max-h-48 object-contain">':''}
+    ${cmd.requiresPassword?'<p class="text-xs text-emerald-300">🔒 Benutzername & Passwort werden direkt in deinem Browser mit dem öffentlichen Schlüssel des Schülers verschlüsselt. Nur der Schüler kann sie im Chat mit seinem Medienscouts-Passwort entschlüsseln.</p>':''}
+    <div class="flex gap-2.5"><button type="button" class="btn2 flex-1 py-2.5" onclick="closeModal()">Abbrechen</button><button type="button" class="btn flex-1 py-2.5" data-t="${esc(ticketId)}" data-c="${esc(cmd.id)}" onclick="submitSlashCommand(this.dataset.t,this.dataset.c)">${cmd.requiresPassword?'Verschlüsselt senden':'Nachricht senden'}</button></div></div>`);
 };
 window.submitSlashCommand=async(ticketId,cmdId)=>{
   const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.id===cmdId);if(!cmd)return toast('Befehl nicht gefunden.');
@@ -1297,7 +1475,13 @@ window.sendProfileFeedback=async()=>{
   toast('Danke! Dein Feedback wurde gesendet.');render();
 };
 window.confirmLogout=()=>{
-  modal(`<div class="space-y-4 text-center"><div class="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto"><i data-lucide="log-out" class="w-6 h-6"></i></div><h2 class="text-lg font-bold">Möchtest du dich wirklich abmelden?</h2><p class="text-sm opacity-70">Du musst dich danach wieder mit deiner Schul-E-Mail und deinem Passwort anmelden.</p><div class="grid grid-cols-2 gap-2"><button class="btn2" onclick="closeModal()">Abbrechen</button><button class="btn !bg-rose-600" onclick="logout()">Ja, abmelden</button></div></div>`);
+  modal(`<button type="button" class="lg-close absolute top-4 right-4" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button>
+    <div class="space-y-4 text-center py-2">
+      <div class="lg-icon-halo mx-auto">${ic('logout','w-10 h-10')}</div>
+      <h2 class="text-xl font-bold">Möchtest du dich wirklich abmelden?</h2>
+      <p class="text-sm opacity-75">Du musst dich danach wieder mit deiner Schul-E-Mail und deinem Medienscouts-Passwort anmelden.</p>
+      <div class="grid grid-cols-2 gap-2.5 pt-1"><button type="button" class="btn2 py-2.5" onclick="closeModal()">Abbrechen</button><button type="button" class="btn !bg-none !bg-rose-600 hover:!bg-rose-500 py-2.5" onclick="logout()">Ja, abmelden</button></div>
+    </div>`);
 };
 
 // ---------- ADMIN-TERMINAL ----------
@@ -1377,17 +1561,6 @@ window.savePasswordPlatforms=async()=>{
 window.savePwGuideText=async()=>{
   await DB.set('settings','main',{...S.settings,setupDone:true,pwGuideText:$('#pw-guide-text')?.value||''});
   toast('Anleitungstext gespeichert.');
-};
-window.openButtonGuide=()=>{
- const img=S.settings.buttonGuideImage;
- modal('<button class="absolute top-4 right-4 z-10 btn2" onclick="closeModal()"><i data-lucide="x" class="w-5 h-5"></i></button>'+(img?'<img src="'+esc(img)+'" alt="Erklärung der Schaltflächen" class="w-full h-full max-h-[90vh] object-contain mx-auto">':'<div class="min-h-[70vh] flex flex-col items-center justify-center text-center gap-3"><i data-lucide="circle-help" class="w-16 h-16 text-teal-600"></i><h2 class="text-2xl font-bold">Hilfe zu den Schaltflächen</h2><p class="max-w-lg text-sm opacity-70">Die Medienscouts können eine Grafik mit Erklärungen im Admin-Menü hochladen. Sie wird hier anschließend im Vollbild angezeigt.</p></div>'),true);
-};
-window.saveRecoverySettings=async()=>{
- if(S.user?.role!=='Admin')return toast('Nur Admins dürfen diese Einstellungen ändern.');
- const recoveryContact=val('recovery-contact');
- if(recoveryContact&&!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(recoveryContact))return toast('Bitte eine gültige Kontaktadresse eintragen.');
- await DB.set('settings','main',{...S.settings,setupDone:true,registrationWarnings:$('#registration-warnings')?.value||'',recoveryContact,recoveryIntro:$('#recovery-intro')?.value||'',recoveryScoutsAllowed:!!$('#recovery-scouts')?.checked});
- toast('Wiederherstellungs-Einstellungen gespeichert.');
 };
 window.saveBrand=async()=>{
   await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
@@ -1474,7 +1647,7 @@ window.saveMailTemplate=async(type,key=type)=>{
 window.previewMailTemplate=(type,key=type)=>{
   const t=window.mailEditorValues(key);
   const sample=t.html.replaceAll('{student}','Max Mustermann').replaceAll('{platform}','Untis').replaceAll('{class}','Klasse 8').replaceAll('{motivation}','Ich möchte anderen Schülern bei digitalen Fragen helfen.');
-  modal('<div class="space-y-3"><div class="flex justify-between items-center"><h2 class="font-bold">E-Mail-Vorschau</h2><button class="btn2" onclick="closeModal()">Schließen</button></div><div class="text-sm"><b>Betreff:</b> '+esc(t.subject)+'</div><div class="rounded-xl bg-white p-3 text-slate-900"><iframe title="Mailvorschau" sandbox="" class="w-full min-h-[360px]" srcdoc="'+esc(sample)+'"></iframe></div></div>');
+  modal('<div class="space-y-3"><div class="flex justify-between items-center gap-3"><div class="flex items-center gap-2.5">'+ic('shield','w-7 h-7')+'<h2 class="font-bold text-lg">E-Mail-Vorschau</h2></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="text-sm"><b>Betreff:</b> '+esc(t.subject)+'</div><div class="rounded-2xl bg-white p-3 text-slate-900 shadow-inner"><iframe title="Mailvorschau" sandbox="" class="w-full min-h-[360px]" srcdoc="'+esc(sample)+'"></iframe></div></div>');
 };
 window.testMailTemplate=async(type,key=type)=>{
   if(S.user?.role!=='Admin'||!auth.currentUser)return toast('Nur Admins dürfen Testmails versenden.');
@@ -1551,29 +1724,6 @@ const adminTabs={
       <div class="pt-3 mt-2 border-t border-slate-200 dark:border-slate-700"><h3 class="font-bold text-base mb-3">Ticket-System · Allgemein</h3>${toggleRow('tickets','Support-Ticket-System','Schüler können Tickets erstellen & mit euch chatten')}</div>
       ${toggleRow('apps','Bewerbungs-Modul','Bewerbungsformular für neue Medienscouts freischalten')}
       ${toggleRow('allowReg','Selbst-Registrierung im Login-Fenster','Schüler können sich selbst einen Account anlegen')}
-      <section class="glass p-4 space-y-3 ${S.user.role==="Admin"?"":"hidden"}">
-        <h3 class="font-bold text-sm">Hilfe-Grafik für die Schaltflächen</h3>
-        <p class="text-xs opacity-70">Das Fragezeichen oben in der Navigation öffnet dieses Bild bildschirmfüllend. Lade hier eine Grafik hoch, auf der die Funktionen und Knöpfe erklärt werden.</p>
-        ${S.settings.buttonGuideImage?'<img src="'+esc(S.settings.buttonGuideImage)+'" onclick="zoom(this.src)" class="max-h-40 rounded-xl object-contain cursor-zoom-in">':'<p class="text-xs opacity-60">Noch keine Hilfe-Grafik hochgeladen.</p>'}
-        <div class="flex gap-2 flex-wrap"><label class="btn2">Erklärbild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'buttonGuideImage',1800)"></label>${S.settings.buttonGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(&quot;buttonGuideImage&quot;,&quot;&quot;)">Entfernen</button>':''}</div>
-      </section>
-      <section class="glass p-4 space-y-3 ${S.user.role==="Admin"?"":"hidden"}">
-        <h3 class="font-bold text-sm">Registrierung & Kontowiederherstellung</h3>
-        <p class="text-xs opacity-70">Die zweite E-Mail wird bei der Registrierung zunächst nur gespeichert. Sie ist noch kein bestätigter Firebase-Wiederherstellungsweg.</p>
-        <label class="text-xs block">Hinweise bei der Registrierung</label>
-        <textarea id="registration-warnings" rows="4" class="inp">${esc(S.settings.registrationWarnings||'Bitte nutze ein sicheres Passwort und teile es mit niemandem.')}</textarea>
-        <label class="text-xs block">Kontaktadresse für Notfälle</label>
-        <input id="recovery-contact" type="email" class="inp" placeholder="kontakt@schule.de" value="${esc(S.settings.recoveryContact||'')}">
-        <label class="text-xs block">Erklärung zur Wiederherstellung</label>
-        <textarea id="recovery-intro" rows="3" class="inp">${esc(S.settings.recoveryIntro||'Wenn du keinen Zugriff mehr auf Schulportal oder WebWeaver hast, wende dich an die Medienscouts oder die Administration.')}</textarea>
-        <div class="flex items-center gap-3">
-          ${S.settings.recoveryGuideImage?'<img src="'+esc(S.settings.recoveryGuideImage)+'" class="h-16 rounded-lg object-cover">':'<span class="text-xs opacity-60">Noch kein Erklärbild</span>'}
-          <label class="btn2">Bild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'recoveryGuideImage',1000)"></label>
-          ${S.settings.recoveryGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(&quot;recoveryGuideImage&quot;,&quot;&quot;)">Entfernen</button>':''}
-        </div>
-        <label class="flex gap-2 items-center text-xs"><input id="recovery-scouts" type="checkbox" ${S.settings.recoveryScoutsAllowed?'checked':''}> Medienscouts dürfen Notfall-Verifizierungen durchführen</label>
-        <button class="btn w-full" onclick="saveRecoverySettings()">Einstellungen speichern</button>
-      </section>
       ${toggleRow('artFeedback','Hilfreich-Abfrage unter Artikeln (👍/👎)','Zeigt unter jeder Anleitung die Frage „Hat dir dieser Artikel geholfen?“')}
       ${toggleRow('board','Schwarzes Brett (Fundsachen & News)','Zeigt auf der Startseite aktuelle Meldungen & digitale Fundsachen')}
       ${toggleRow('surveys','Umfrage-Modul','Schaltet den Bereich für anonyme & nicht-anonyme Umfragen frei')}
@@ -1715,6 +1865,7 @@ const adminTabs={
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
             ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
+            ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-500 font-semibold">🔒 E2EE</span>':''}
             ${t.reopened?'<span class="text-[10px] px-2 py-0.5 rounded bg-amber-500 text-white">Wieder geöffnet</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
@@ -1999,12 +2150,12 @@ window.previewMediaDraft=kind=>{
   if(kind==='videos'){
     const id=ytId(val('v-url')),title=val('v-title'),desc=val('v-desc');
     if(!id||!title)return toast('Bitte gültigen YouTube-Link und Titel eingeben.');
-    modal(`<div class="space-y-3"><div class="flex justify-between items-center"><h2 class="font-bold text-lg">Video-Vorschau</h2><button class="btn2" onclick="closeModal()">Schließen</button></div><div class="aspect-video bg-black rounded-xl overflow-hidden"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${id}" allowfullscreen></iframe></div><h3 class="font-bold text-xl">${esc(title)}</h3><p class="text-sm opacity-75 whitespace-pre-wrap">${esc(desc)}</p></div>`);
+    modal(`<div class="space-y-4"><div class="flex justify-between items-center gap-3"><div class="flex items-center gap-2.5">${ic('video','w-7 h-7')}<h2 class="font-bold text-lg">Video-Vorschau</h2></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="aspect-video bg-black rounded-2xl overflow-hidden border border-white/15"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${id}" allowfullscreen></iframe></div><h3 class="font-bold text-xl">${esc(title)}</h3><p class="text-sm opacity-80 whitespace-pre-wrap">${esc(desc)}</p></div>`);
     const panel=$('#modal .max-w-xl');if(panel)panel.classList.replace('max-w-xl','max-w-4xl');
   }else{
     const title=val('a-title'),body=val('a-body');
     if(!title||!body)return toast('Bitte Titel und Artikeltext eingeben.');
-    modal(`<div class="space-y-4"><div class="flex justify-between items-center"><h2 class="font-bold text-lg">Artikel-Vorschau</h2><button class="btn2" onclick="closeModal()">Schließen</button></div><div class="text-xs text-blue-600">${esc(val('a-cat'))}</div><h1 class="text-2xl font-bold">${esc(title)}</h1><div class="prose max-w-none">${fmtArticle(body)}</div></div>`);
+    modal(`<div class="space-y-4"><div class="flex justify-between items-center gap-3"><div class="flex items-center gap-2.5">${ic('book','w-7 h-7')}<h2 class="font-bold text-lg">Artikel-Vorschau</h2></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="text-xs text-cyan-300 font-semibold">${esc(val('a-cat'))}</div><h1 class="text-2xl font-bold">${esc(title)}</h1><div class="prose max-w-none">${fmtArticle(body)}</div></div>`);
     const panel=$('#modal .max-w-xl');if(panel)panel.classList.replace('max-w-xl','max-w-3xl');
   }
 };
