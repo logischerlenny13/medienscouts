@@ -765,8 +765,8 @@ window.openAuth=(mode='login')=>{
   if(mode==='reg'&&S.authMode!=='reg'){S.regStep=1;S.regDraft={name:'',klass:'Klasse 8',email:'',password:'',recoveryEmail:'',acceptedWarnings:false};}
   S.authMode=mode;S.open='login';
   const regAllowed=S.settings.allowReg;
-  modal(`<button class="absolute top-4 right-4 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
-    <div class="max-w-sm mx-auto py-2 space-y-5">
+  modal(`<button class="absolute top-4 right-4 btn2 z-10" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
+    <div class="${mode==='reg'?'w-full max-w-7xl mx-auto py-4 sm:py-8':'max-w-sm mx-auto py-2'} space-y-5">
       <div class="text-center space-y-1">
         <div class="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-2"><i data-lucide="user-check" class="w-6 h-6"></i></div>
         <h2 class="text-xl font-bold">${mode=='login'?'Schul-Account Login':mode=='reg'?'Konto registrieren':'Passwort zurücksetzen'}</h2>
@@ -784,7 +784,7 @@ window.openAuth=(mode='login')=>{
         <b>Ersteinrichtung:</b> Noch kein Admin angelegt. Klicke hier, um den ersten Haupt-Admin samt Beispieldaten einzurichten:
         <button class="btn w-full !bg-amber-600 hover:!bg-amber-500" onclick="setup()">Ersten Admin & Startdaten anlegen</button>
       </div>`:''}
-    </div>`);
+    </div>`,mode==='reg');
 };
 
 
