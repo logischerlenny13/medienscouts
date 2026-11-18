@@ -15,7 +15,7 @@
 .tab.on{@apply bg-blue-600 text-white shadow-sm}
 .prose p{margin:.85rem 0;line-height:1.75;font-size:1.02rem}.prose h3{font-weight:700;font-size:1.3rem;margin-top:1.6rem;margin-bottom:.5rem}.prose ul{list-style:disc;padding-left:1.5rem;margin:.8rem 0;line-height:1.7}
 </style>
-<script src="/_aistudio-iframe.js?v=29045eb3"></script></head>
+</head>
 <body class="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 bg-cover bg-center bg-fixed transition-colors">
 <div id="bg-overlay" class="min-h-screen flex flex-col">
   <div id="app" class="flex-1 flex flex-col"></div>
@@ -26,21 +26,21 @@
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail,setPersistence,indexedDBLocalPersistence,browserLocalPersistence} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getAuth,initializeAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail,EmailAuthProvider,reauthenticateWithCredential,indexedDBLocalPersistence,browserLocalPersistence} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where,Timestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
-const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
-// Dauerhaft angemeldet bleiben: Speicher fest auf "lokal" stellen und vom Browser als dauerhaft anfordern
-setPersistence(auth,indexedDBLocalPersistence).catch(()=>setPersistence(auth,browserLocalPersistence)).catch(()=>{});
+let auth;const fb=initializeApp(firebaseConfig);
+try{auth=initializeAuth(fb,{persistence:[indexedDBLocalPersistence,browserLocalPersistence]})}catch(_){auth=getAuth(fb)}
+const db=getFirestore(fb);
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(_){}
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Fehler: '+(e.reason?.code||e.reason?.message||e.reason))});
 
 // ---------- Datenschicht ----------
 const DB={
-  watch:(col,cb,order)=>onSnapshot(order?query(collection(db,col),orderBy(order,'desc')):collection(db,col),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
-  watchPrivate:(uid,cb)=>{let a=[],b=[];const emit=()=>cb([...new Map([...a,...b].map(x=>[x.id,x])).values()].sort((x,y)=>(y.createdAt||0)-(x.createdAt||0)));const u1=onSnapshot(query(collection(db,'privateMessages'),where('fromUid','==',uid)),s=>{a=s.docs.map(d=>({id:d.id,...d.data()}));emit()});const u2=onSnapshot(query(collection(db,'privateMessages'),where('toUid','==',uid)),s=>{b=s.docs.map(d=>({id:d.id,...d.data()}));emit()});return()=>{u1();u2()};},
-  watchMy:(col,uid,cb)=>onSnapshot(query(collection(db,col),where('uid','==',uid)),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt)))),
+  watch:(col,cb,order)=>onSnapshot(order?query(collection(db,col),orderBy(order,'desc')):collection(db,col),s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))),err=>console.warn('Live-Abo Warnung ('+col+'):',err?.code||err)),
+  watchPrivate:(uid,cb)=>{let a=[],b=[];const emit=()=>cb([...new Map([...a,...b].map(x=>[x.id,x])).values()].sort((x,y)=>(y.createdAt||0)-(x.createdAt||0)));const u1=onSnapshot(query(collection(db,'privateMessages'),where('fromUid','==',uid)),s=>{a=s.docs.map(d=>({id:d.id,...d.data()}));emit()},err=>console.warn(err));const u2=onSnapshot(query(collection(db,'privateMessages'),where('toUid','==',uid)),s=>{b=s.docs.map(d=>({id:d.id,...d.data()}));emit()},err=>console.warn(err));return()=>{u1();u2()};},
+  watchMy:(col,uid,cb)=>onSnapshot(query(collection(db,col),where('uid','==',uid)),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updatedAt||b.createdAt)-(a.updatedAt||a.createdAt))),err=>console.warn('Live-Abo Warnung ('+col+'):',err?.code||err)),
   watchScoutTickets:(uid,cb)=>{let unclaimed=[],mine=[];const emit=()=>cb([...new Map([...unclaimed,...mine].map(t=>[t.id,t])).values()].sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0)));const a=onSnapshot(query(collection(db,'tickets'),where('passwordReset','==',false),where('assignedUid','==',null)),snap=>{unclaimed=snap.docs.map(d=>({id:d.id,...d.data()}));emit()},err=>console.error('Unbeanspruchte Tickets konnten nicht geladen werden:',err));const b=onSnapshot(query(collection(db,'tickets'),where('passwordReset','==',false),where('assignedUid','==',uid)),snap=>{mine=snap.docs.map(d=>({id:d.id,...d.data()}));emit()},err=>console.error('Eigene Tickets konnten nicht geladen werden:',err));return()=>{a();b()};},
   add:(col,d)=>addDoc(collection(db,col),d),
   set:(col,id,d)=>setDoc(doc(db,col,id),d),
@@ -124,7 +124,7 @@ const E2EE={
     try{
       const wrapKey=await E2EE.derivePinKey(pin,E2EE.unb64(w.salt),w.iterations||310000);
       pkcs8=await crypto.subtle.decrypt({name:'AES-GCM',iv:E2EE.unb64(w.iv)},wrapKey,E2EE.unb64(w.ciphertext));
-    }catch(_){throw new Error('Falscher Abhol-Code! Bitte prüfe deine Eingabe.')}
+    }catch(_){throw new Error('Falsches Schulportal-Passwort! Bitte prüfe deine Eingabe.')}
     const priv=await crypto.subtle.importKey('pkcs8',pkcs8,{name:'RSA-OAEP',hash:'SHA-256'},false,['decrypt']);
     const rawAes=await crypto.subtle.decrypt({name:'RSA-OAEP'},priv,E2EE.unb64(pwDoc.encryptedKey));
     const aes=await crypto.subtle.importKey('raw',rawAes,{name:'AES-GCM'},false,['decrypt']);
@@ -171,11 +171,20 @@ onAuthStateChanged(auth,async u=>{
   if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';
     try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Sicherheitsprüfung nicht erreichbar:',e);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte versuche es später erneut.');return}
     render();return}
-  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(check.status===403&&info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}if(!check.ok){console.warn('Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen:',info);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.')}else if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Aktive Sitzung konnte nicht sicher geprüft werden:',e);toast('Sicherheitsprüfung vorübergehend nicht erreichbar. Deine Sitzung bleibt bestehen.');}
-  let p=await DB.get('users',u.uid);
-  if(!p){
-    p={email:u.email,name:u.email.split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
-    await DB.set('users',u.uid,p);
+  try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(check.status===403&&info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}if(!check.ok){console.warn('Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen:',info)}else if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.warn('Aktive Sitzung konnte momentan nicht geprüft werden; Sitzung bleibt bestehen:',e)}
+  const cacheKey='medienscouts_profile_'+u.uid;
+  let p=null;
+  try{
+    p=await DB.get('users',u.uid);
+    if(!p){
+      p={email:u.email,name:u.email.split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
+      await DB.set('users',u.uid,p).catch(()=>{});
+    }
+    try{localStorage.setItem(cacheKey,JSON.stringify(p))}catch(_){}
+  }catch(profileErr){
+    console.warn('Profil wird aus lokalem Zwischenspeicher geladen:',profileErr);
+    try{p=JSON.parse(localStorage.getItem(cacheKey)||'null')}catch(_){}
+    if(!p)p={email:u.email||'',name:(u.email||'Schüler').split('@')[0],klass:'',role:'Schüler',createdAt:Date.now()};
   }
   S.user={uid:u.uid,...p};lastCountedView=null;
   if(S.settings.personalization&&typeof p.preferences?.darkMode==='boolean')document.documentElement.classList.toggle('dark',p.preferences.darkMode);
@@ -187,7 +196,7 @@ onAuthStateChanged(auth,async u=>{
 
   S.unsubs.push(DB.watchPrivate(u.uid,d=>{S.privateMessages=d;render()}));
   S.unsubs.push(DB.watch('publicUsers',d=>{S.pubUsers=d;render()}));
-  await DB.set('publicUsers',u.uid,{name:S.user.name,role:S.user.role||'Schüler',klass:S.user.klass||''});
+  DB.set('publicUsers',u.uid,{name:S.user.name,role:S.user.role||'Schüler',klass:S.user.klass||''}).catch(()=>{});
   S.unsubs.push(DB.watch('helpArticles',d=>{S.helpArticles=d;render()},'createdAt'));
 
   if(['Admin','Medienscout'].includes(p.role)){
@@ -219,7 +228,11 @@ document.addEventListener('pointerdown',e=>{
 document.addEventListener('pointerup',()=>setTimeout(releasePointer,30),true);
 document.addEventListener('pointercancel',releasePointer,true);
 document.addEventListener('focusout',()=>{
-  if(pendingRenderAfterBlur){pendingRenderAfterBlur=false;setTimeout(()=>render(),80);}
+  if(pendingRenderAfterBlur){
+    pendingRenderAfterBlur=false;
+    if(pointerActive){pendingRender=true;}
+    else{setTimeout(()=>{if(!pointerActive)render();else pendingRender=true;},120);}
+  }
 });
 
 function currentContent(){
@@ -261,6 +274,7 @@ function renderInner(force=false){
     $('#app-main').innerHTML=content;
     $('#app-footer').innerHTML=footer();
   }
+  pendingRenderAfterBlur=false;
   if(S.user&&lastCountedView!==S.view){lastCountedView=S.view;DB.add('pageViews',{ts:Date.now()}).catch(e=>console.warn('Seitenaufruf konnte nicht gezählt werden',e));}
   icons();
   if(fid){const e=$('#'+fid);if(e){e.focus();try{e.setSelectionRange(pos,pos)}catch(_){}}}
@@ -622,7 +636,7 @@ function studentTicketsView(){
   </div>`;
 }
 
-// ---------- Passwort zurücksetzen (Schüler, Ende-zu-Ende-verschlüsselt) ----------
+// ---------- Passwort zurücksetzen (Schüler, Ende-zu-Ende-verschlüsselt mit Schulportal-Passwort) ----------
 function pwResetView(){
   if(!S.settings.passwordSupport)return `<div class="glass p-6 text-amber-500">Der Passwort-Support ist momentan deaktiviert.</div>`;
   return `<div class="max-w-2xl mx-auto space-y-5">
@@ -632,15 +646,12 @@ function pwResetView(){
     </div>
     <div class="glass p-4 border border-emerald-500/30 text-sm space-y-1.5">
       <div class="font-semibold text-emerald-500">So funktioniert die sichere Übertragung:</div>
-      <p class="text-xs opacity-80 leading-relaxed">Lege zuerst einen persönlichen <b>Abhol-Code</b> fest. Dein Browser erzeugt damit einen geheimen Schlüssel. Das neue Passwort wird direkt beim Admin verschlüsselt und liegt <b>niemals im Klartext in Firebase</b>. Nur du kannst es mit deinem Abhol-Code im Chat entschlüsseln.</p>
+      <p class="text-xs opacity-80 leading-relaxed">Bestätige einmal dein <b>aktuelles Schulportal-Passwort</b>. Damit erzeugt dein Browser einen geheimen Schlüssel – du musst dir keinen extra Code merken. Das neue Passwort wird beim Admin direkt verschlüsselt, liegt <b>niemals im Klartext in Firebase</b> und du entschlüsselst es im Chat einfach wieder mit deinem Schulportal-Passwort.</p>
     </div>
     <div class="glass p-5 space-y-3">
-      <div class="flex items-center justify-between gap-2 flex-wrap">
-        <label class="text-xs font-semibold uppercase tracking-wider opacity-80">1. Persönlicher Abhol-Code (mind. 4 Zeichen)</label>
-        <button type="button" class="btn2" onclick="genPwPin()">Zufalls-Code erzeugen</button>
-      </div>
-      <input id="pw-pin" type="text" autocomplete="off" class="inp font-mono tracking-wider" placeholder="z.B. ein 6-stelliger Code oder Merkwort">
-      <div id="pw-pin-hint" class="text-xs text-amber-500 hidden">Bitte merke oder notiere dir diesen Code – er wird nirgendwo gespeichert!</div>
+      <label class="text-xs font-semibold uppercase tracking-wider opacity-80 block">1. Dein Schulportal-Passwort bestätigen</label>
+      <input id="pw-pin" type="password" autocomplete="current-password" class="inp" placeholder="Dein aktuelles Schulportal-Passwort">
+      <p class="text-xs opacity-65">Wird nur lokal in deinem Browser zum Verschlüsseln genutzt und niemals gespeichert.</p>
       <label class="text-xs font-semibold uppercase tracking-wider opacity-80 block pt-1">2. Optionale Anmerkung</label>
       <textarea id="pw-note" rows="2" class="inp" placeholder="Optional: Anmerkung für das Admin-Team"></textarea>
     </div>
@@ -650,24 +661,28 @@ function pwResetView(){
     </div>
   </div>`;
 }
-window.genPwPin=()=>{
-  const a=new Uint32Array(1);crypto.getRandomValues(a);
-  const code=String(100000+(a[0]%900000));
-  const inp=$('#pw-pin');if(inp){inp.value=code;inp.focus();}
-  $('#pw-pin-hint')?.classList.remove('hidden');
-  toast('Abhol-Code erzeugt – bitte gut merken!');
-};
 window.createPwTicket=async p=>{
   if(!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
   if(S.creatingPwTicket)return;
-  const pin=val('pw-pin');
-  if(pin.length<4){$('#pw-pin')?.focus();return toast('Bitte zuerst einen Abhol-Code mit mindestens 4 Zeichen eingeben.');}
-  if(!confirm('Passwort für '+p+' zurücksetzen lassen?\n\nWichtig: Merke dir deinen Abhol-Code („'+pin+'“). Nur damit kannst du dein neues Passwort später im Chat entschlüsseln!'))return;
+  const portalPw=$('#pw-pin')?.value||'';
+  if(!portalPw){$('#pw-pin')?.focus();return toast('Bitte gib zuerst dein aktuelles Schulportal-Passwort ein.');}
+  if(!confirm('Passwort für '+p+' zurücksetzen lassen?\n\nHinweis: Zum Entschlüsseln im Chat gibst du später einfach wieder dein Schulportal-Passwort ein.'))return;
   S.creatingPwTicket=true;render(true);
   try{
-    const keys=await E2EE.generateTicketKeys(pin);
+    try{
+      await reauthenticateWithCredential(auth.currentUser,EmailAuthProvider.credential(S.user.email,portalPw));
+    }catch(authErr){
+      $('#pw-pin')?.focus();
+      if(authErr?.code==='auth/wrong-password'||authErr?.code==='auth/invalid-credential'){
+        toast('Dein Schulportal-Passwort stimmt nicht. Bitte prüfe deine Eingabe.');
+      }else{
+        toast('Passwort konnte nicht geprüft werden: '+(authErr?.code||authErr?.message||authErr));
+      }
+      return;
+    }
+    const keys=await E2EE.generateTicketKeys(portalPw);
     const now=Date.now(),note=val('pw-note');
-    const ref=await DB.add('tickets',{uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,subject:'Passwort zurücksetzen: '+p,category:'Passwort zurücksetzen',status:'Neu',assignedUid:null,assignedName:null,passwordReset:true,passwordPlatform:p,...keys,createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false});
+    const ref=await DB.add('tickets',{uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,subject:'Passwort zurücksetzen: '+p,category:'Passwort zurücksetzen',status:'Neu',assignedUid:null,assignedName:null,passwordReset:true,passwordPlatform:p,e2eeKeyMode:'portal-password',...keys,createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false});
     await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,senderRole:'User',text:'Bitte das Passwort für '+p+' zurücksetzen.'+(note?'\n'+note:''),img:null,internal:false,ts:now});
     sendAutomaticMail('passwordReset',ref.id);
     toast('Verschlüsseltes Passwort-Ticket erstellt.');S.view='tickets';render(true);openChat(ref.id,false);
@@ -830,8 +845,8 @@ window.submitAuth=async()=>{
       try{
         const token=await auth.currentUser.getIdToken();
         const logged=await fetch('/api/security-check',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({eventType:'login',deviceId:getSecurityDeviceId()})});
-        if(!logged.ok){const denial=await logged.json().catch(()=>({}));await signOut(auth);if(logged.status===403&&denial.blocked){showSecurityBlock(denial.countryName,denial.error)}else{toast(denial.error||'Anmeldung wurde durch die Sicherheitsprüfung nicht freigegeben.')}return;}
-      }catch(logError){console.error('Sicherheitsprotokoll nicht erreichbar:',logError);await signOut(auth);toast('Anmeldung nicht freigegeben: Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte später erneut versuchen.');return;}
+        if(logged.status===403){const denial=await logged.json().catch(()=>({}));await signOut(auth);if(denial.blocked){showSecurityBlock(denial.countryName,denial.error)}else{toast(denial.error||'Anmeldung wurde durch die Sicherheitsprüfung nicht freigegeben.')}return;}
+      }catch(logError){console.warn('Sicherheitsprotokoll vorübergehend nicht erreichbar; Anmeldung bleibt bestehen:',logError);}
     }
     closeModal();
     if(S.pendingView){S.view=S.pendingView;S.pendingView=null;render()}
@@ -907,14 +922,14 @@ function renderChatMessages(id,t,asAdmin,ms,pwc){
       if(live&&pwc.e2ee){
         privateCard=dec
           ? `<section class="glass p-4 border-2 border-amber-400 space-y-2"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Deine entschlüsselten Zugangsdaten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-entschlüsselt</span></div><div class="text-sm">App: <b>${esc(dec.platform||pwc.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(dec.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">${S.revealedChatPw[id]?esc(dec.password):'••••••••••'}</b></div><div class="flex flex-wrap gap-2 pt-1"><button type="button" class="btn2" onclick="revealTicketPassword('${id}')">${S.revealedChatPw[id]?'Verbergen':'Einblenden'}</button><button type="button" class="btn2" onclick="copyTicketPassword('${id}')">Kopieren</button><button type="button" class="btn2 !text-rose-500 ml-auto" onclick="burnTicketPassword('${id}')">Nach Nutzung endgültig löschen</button></div></section>`
-          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib deinen persönlichen Abhol-Code ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="off" class="inp flex-1 min-w-[160px]" placeholder="Dein Abhol-Code…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
+          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib dein <b>Schulportal-Passwort</b> ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="current-password" class="inp flex-1 min-w-[160px]" placeholder="Dein Schulportal-Passwort…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
       }else if(live){
         privateCard=`<section class="glass p-4 text-xs text-amber-500 border border-amber-500/30">⚠️ Dieses Ticket stammt aus einer älteren unverschlüsselten Version. Bitte fordere ein neues verschlüsseltes Passwort-Ticket an.</section>`;
       }else if(!live){
         privateCard=`<section class="glass p-4 text-xs opacity-70 border border-slate-500/30">🔐 Die verschlüsselten Zugangsdaten wurden bereits gelöscht oder sind abgelaufen.</section>`;
       }
     }else{
-      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten verschlüsselt gesendet</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Abhol-Code entschlüsseln.</div></section>`;
+      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten verschlüsselt gesendet</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Schulportal-Passwort entschlüsseln.</div></section>`;
     }
   }
   l.innerHTML=(visibleMs.map(m=>{
@@ -1011,13 +1026,15 @@ window.openChat=async(id,asAdmin)=>{
 };
 
 window.unlockTicketPassword=async id=>{
-  const pin=$('#pw-unlock-pin-'+id)?.value.trim()||'';
-  if(!pin)return toast('Bitte gib deinen Abhol-Code ein.');
+  const pin=$('#pw-unlock-pin-'+id)?.value||'';
+  if(!pin)return toast('Bitte gib dein Schulportal-Passwort ein.');
   try{
     const ticket=await DB.get('tickets',id),pwDoc=await DB.passwordGet(id);
     if(!ticket||!pwDoc)return toast('Zugangsdaten nicht mehr gefunden.');
     if(pwDoc.uid!==S.user?.uid||pwDoc.expiresAt?.toMillis?.()<=Date.now())return toast('Die Zugangsdaten sind abgelaufen.');
-    const dec=await E2EE.decryptForTicket(ticket,pwDoc,pin);
+    let dec;
+    try{dec=await E2EE.decryptForTicket(ticket,pwDoc,pin);}
+    catch(e){if(pin!==pin.trim()){dec=await E2EE.decryptForTicket(ticket,pwDoc,pin.trim());}else{throw e;}}
     S.decryptedChatPw[id]=dec;S.revealedChatPw[id]=false;
     const st=window._activeChatState;
     if(st&&st.id===id)renderChatMessages(id,st.t,st.asAdmin,lastChatMsgs,pwDoc);
@@ -1098,8 +1115,8 @@ window.sendMsg=async(id,asAdmin)=>{
   if(asAdmin&&!S.chatNoteMode&&text.startsWith('/')){$('#s-c-msg').value='';await runSlashCommand(id,text);return;}
   const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
   await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(S.user.role==='Admin'?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(S.user.role==='Admin'?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now});
-  if(!isInternal)await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false});
   $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML='';
+  if(!isInternal)await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false}).catch(e=>console.warn('Ticket-Status-Update übersprungen:',e));
 };
 
 // ---------- Slash-Befehle ----------
@@ -1152,7 +1169,7 @@ window.runSlashCommand=async(ticketId,input)=>{
   modal(`<div class="space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3>${cmd.requiresPassword?'<span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500">🔒 Ende-zu-Ende-verschlüsselt</span>':''}</div><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}${ticket.passwordPlatform?' · App: <b>'+esc(ticket.passwordPlatform)+'</b>':''}</p>
     ${cmd.requiresPassword?'<label class="block text-xs">Benutzername<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
     <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(guideText)}</div>${guideImg?'<img src="'+guideImg+'" class="rounded-xl max-h-48 object-contain">':''}
-    ${cmd.requiresPassword?'<p class="text-xs text-emerald-600 dark:text-emerald-400">🔒 Benutzername & Passwort werden direkt in deinem Browser mit dem öffentlichen Schlüssel des Schülers verschlüsselt. In Firebase landet niemals Klartext. Danach wird das Ticket gelöst und freigegeben.</p>':''}
+    ${cmd.requiresPassword?'<p class="text-xs text-emerald-600 dark:text-emerald-400">🔒 Benutzername & Passwort werden direkt in deinem Browser mit dem öffentlichen Schlüssel des Schülers verschlüsselt. Nur der Schüler kann sie im Chat mit seinem Schulportal-Passwort entschlüsseln.</p>':''}
     <div class="flex gap-2"><button type="button" class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button type="button" class="btn flex-1" data-t="${esc(ticketId)}" data-c="${esc(cmd.id)}" onclick="submitSlashCommand(this.dataset.t,this.dataset.c)">${cmd.requiresPassword?'Verschlüsselt senden':'Nachricht senden'}</button></div></div>`);
 };
 window.submitSlashCommand=async(ticketId,cmdId)=>{
@@ -1613,6 +1630,7 @@ const adminTabs={
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
             ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
+            ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-500 font-semibold">🔒 E2EE</span>':''}
             ${t.reopened?'<span class="text-[10px] px-2 py-0.5 rounded bg-amber-500 text-white">Wieder geöffnet</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
@@ -1621,9 +1639,9 @@ const adminTabs={
         </div>
       </button>
       <div class="flex items-center gap-2">
-        ${t.assignedUid!=S.user.uid?`<button class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>`:''}
-        <button class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Vollbild-Chat</button>
-        ${S.user.role==='Admin'?`<button class="btn2 !text-rose-500" onclick="delItem('tickets','${t.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`:''}
+        ${t.assignedUid!=S.user.uid?`<button type="button" class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>`:''}
+        <button type="button" class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Vollbild-Chat</button>
+        ${S.user.role==='Admin'?`<button type="button" class="btn2 !text-rose-500" onclick="delItem('tickets','${t.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`:''}
       </div>
     </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine Tickets vorhanden.</div>'}
   </div>`,
@@ -1636,8 +1654,8 @@ const adminTabs={
         <div class="text-xs opacity-70 mt-1">Schüler: <b>${esc(t.userName||'Schüler')}</b> (${esc(t.userEmail||'-')}) · ${esc(t.category)} · ${fmt(t.updatedAt||t.createdAt)}</div>
       </div>
       <div class="flex items-center gap-2">
-        <button class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>
-        <button class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Chat ansehen</button>
+        <button type="button" class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>
+        <button type="button" class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Chat ansehen</button>
       </div>
     </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine beanspruchten Tickets.</div>'}
   </div>`,
@@ -1947,7 +1965,7 @@ window.setup=async()=>{
   }catch(e){toast('Fehler: '+e.code)}
 };
 
-setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken();const res=await fetch('/api/security-check?heartbeat=1&deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(res.status===403){const info=await res.json().catch(()=>({}));if(info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}}if(res.ok&&securityBlockSticky){securityBlockSticky=false;clearSecurityBlock()}if(!res.ok)console.warn('Regelmäßige Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen.',res.status)}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen; Sitzung bleibt bestehen:',e)}},30000);
+setInterval(async()=>{const active=auth.currentUser;if(!active)return;try{const token=await active.getIdToken(false);const res=await fetch('/api/security-check?heartbeat=1&deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(res.status===403){const info=await res.json().catch(()=>({}));if(info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}}if(res.ok&&securityBlockSticky){securityBlockSticky=false;clearSecurityBlock()}if(!res.ok)console.warn('Regelmäßige Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen.',res.status)}catch(e){console.warn('Regelmäßige Sicherheitsprüfung fehlgeschlagen; Sitzung bleibt bestehen:',e)}},30000);
 Object.assign(window,{S,DB,val,render});
 const appRoot=document.getElementById('app');if(appRoot)appRoot.style.display='none';
 render();
