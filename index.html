@@ -790,7 +790,7 @@ function loginFormView(mode){
  h+='<button class="btn w-full" onclick="submitAuth()">'+(mode==='login'?'Anmelden':'Reset-E-Mail senden')+'</button>';
  if(mode==='reset'){
   h+='<button class="text-xs text-teal-700 dark:text-teal-300 hover:underline w-full" onclick="openRecoveryInfo()">Ich habe keinen Zugriff auf Schulportal / WebWeaver</button>';
-  h+='<button class="btn2 w-full" onclick="openAuth(\\'login\\')">Zurück zum Login</button>';
+  h+='<button class="btn2 w-full" onclick="openAuth(\'login\')">Zurück zum Login</button>';
  }
  return '<div class="space-y-3">'+h+'</div>';
 }
