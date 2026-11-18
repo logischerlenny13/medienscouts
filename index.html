@@ -787,6 +787,7 @@ function loginFormView(mode){
  if(mode!=='reset')h+='<div><div class="flex items-center justify-between mb-1"><label class="text-xs opacity-70">Passwort</label>'+(mode==='login'?'<button class="text-xs text-blue-500 hover:underline cursor-pointer" onclick="openAuth(\\'reset\\')">Passwort vergessen?</button>':'')+'</div><input id="l-pw" type="password" class="inp" placeholder="••••••••" value="'+(S.needSetup?'scout123':'')+'" onkeydown="if(event.key===\\'Enter\\')submitAuth()"></div>';
  h+='<button class="btn w-full" onclick="submitAuth()">'+(mode==='login'?'Anmelden':'Reset-E-Mail senden')+'</button>';
  if(mode==='reset')h+='<button class="btn2 w-full" onclick="openAuth(\\'login\\')">Zurück zum Login</button>';
+ if(mode==='login')h+='<button class="text-xs text-teal-700 dark:text-teal-300 hover:underline w-full" onclick="openRecoveryInfo()">Kein Zugriff auf Schulportal / WebWeaver?</button>';
  return '<div class="space-y-3">'+h+'</div>';
 }
 function registrationWizardView(){
@@ -841,9 +842,16 @@ function getSecurityDeviceId(){
   if(!id){id=(crypto.randomUUID?crypto.randomUUID():('dev-'+Date.now()+'-'+Math.random().toString(36).slice(2)));localStorage.setItem(key,id);}
   return id;
 }
+window.openRecoveryInfo=()=>{
+ const intro=esc(S.settings.recoveryIntro||'Wenn du keinen Zugriff mehr auf Schulportal oder WebWeaver hast, wende dich an die Medienscouts oder die Administration.');
+ const contact=String(S.settings.recoveryContact||'').trim();
+ const methods='<div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3"><b>1. Medienscout verifizieren</b><p class="text-xs opacity-70 mt-1">Die Identität wird persönlich durch einen berechtigten Medienscout oder Admin geprüft. Das Code-Verfahren wird als nächster Schritt ergänzt.</p></div><div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3"><b>2. Zweite E-Mail-Adresse</b><p class="text-xs opacity-70 mt-1">Diese Möglichkeit wird vorbereitet. Eine hinterlegte Adresse ist aktuell noch nicht bestätigt und kann noch keinen Passwort-Reset auslösen.</p></div><div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3"><b>3. Admin-Notfallprüfung</b><p class="text-xs opacity-70 mt-1">Die Administration kann die Anfrage außerhalb des normalen Login-Systems prüfen.</p></div>';
+ modal('<div class="space-y-4"><h2 class="text-lg font-bold">Kein Zugriff mehr?</h2><p class="text-sm opacity-75">'+intro+'</p>'+methods+(contact?'<p class="text-sm">Kontakt: <a class="text-teal-600 underline" href="mailto:'+esc(contact)+'">'+esc(contact)+'</a></p>':'')+'<button class="btn w-full" onclick="closeModal()">Schließen</button></div>');
+};
+
 window.submitAuth=async()=>{
   let email=val('l-mail'),pw=val('l-pw'),name=val('l-name'),klass=val('l-class');
-  if(S.authMode==='reg'){email=S.regDraft?.email||'';pw=S.regDraft?.password||'';name=S.regDraft?.name||'';klass=S.regDraft?.klass||'Klasse 8';}
+  if(S.authMode==='reg'){email=S.regDraft?.email||'';pw=S.regDraft?.password||'';name=S.regDraft?.name||'';klass=S.regDraft?.klass||'Klasse 8';S.regDraft.recoveryEmail=val('reg-recovery-email');if(S.regDraft.recoveryEmail&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(S.regDraft.recoveryEmail))return toast('Bitte eine gültige zweite E-Mail-Adresse eingeben.');}
   if(!email)return toast('Bitte E-Mail-Adresse eingeben.');
   try{
     let securityPreflight=null;
@@ -1530,17 +1538,17 @@ const adminTabs={
         <h3 class="font-bold text-sm">Registrierung & Kontowiederherstellung</h3>
         <p class="text-xs opacity-70">Die zweite E-Mail wird bei der Registrierung zunächst nur gespeichert. Sie ist noch kein bestätigter Firebase-Wiederherstellungsweg.</p>
         <label class="text-xs block">Hinweise bei der Registrierung</label>
-        <textarea id="registration-warnings" rows="4" class="inp">\${esc(S.settings.registrationWarnings||'Bitte nutze ein sicheres Passwort und teile es mit niemandem.')}</textarea>
+        <textarea id="registration-warnings" rows="4" class="inp">${esc(S.settings.registrationWarnings||'Bitte nutze ein sicheres Passwort und teile es mit niemandem.')}</textarea>
         <label class="text-xs block">Kontaktadresse für Notfälle</label>
-        <input id="recovery-contact" type="email" class="inp" placeholder="kontakt@schule.de" value="\${esc(S.settings.recoveryContact||'')}">
+        <input id="recovery-contact" type="email" class="inp" placeholder="kontakt@schule.de" value="${esc(S.settings.recoveryContact||'')}">
         <label class="text-xs block">Erklärung zur Wiederherstellung</label>
-        <textarea id="recovery-intro" rows="3" class="inp">\${esc(S.settings.recoveryIntro||'Wenn du keinen Zugriff mehr auf Schulportal oder WebWeaver hast, wende dich an die Medienscouts oder die Administration.')}</textarea>
+        <textarea id="recovery-intro" rows="3" class="inp">${esc(S.settings.recoveryIntro||'Wenn du keinen Zugriff mehr auf Schulportal oder WebWeaver hast, wende dich an die Medienscouts oder die Administration.')}</textarea>
         <div class="flex items-center gap-3">
-          \${S.settings.recoveryGuideImage?'<img src="'+esc(S.settings.recoveryGuideImage)+'" class="h-16 rounded-lg object-cover">':'<span class="text-xs opacity-60">Noch kein Erklärbild</span>'}
+          ${S.settings.recoveryGuideImage?'<img src="'+esc(S.settings.recoveryGuideImage)+'" class="h-16 rounded-lg object-cover">':'<span class="text-xs opacity-60">Noch kein Erklärbild</span>'}
           <label class="btn2">Bild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'recoveryGuideImage',1000)"></label>
-          \${S.settings.recoveryGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(\\'recoveryGuideImage\\',\\'\\')">Entfernen</button>':''}
+          ${S.settings.recoveryGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet('recoveryGuideImage','')">Entfernen</button>':''}
         </div>
-        <label class="flex gap-2 items-center text-xs"><input id="recovery-scouts" type="checkbox" \${S.settings.recoveryScoutsAllowed?'checked':''}> Medienscouts dürfen Notfall-Verifizierungen durchführen</label>
+        <label class="flex gap-2 items-center text-xs"><input id="recovery-scouts" type="checkbox" ${S.settings.recoveryScoutsAllowed?'checked':''}> Medienscouts dürfen Notfall-Verifizierungen durchführen</label>
         <button class="btn w-full" onclick="saveRecoverySettings()">Einstellungen speichern</button>
       </section>
       ${toggleRow('artFeedback','Hilfreich-Abfrage unter Artikeln (👍/👎)','Zeigt unter jeder Anleitung die Frage „Hat dir dieser Artikel geholfen?“')}
