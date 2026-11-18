@@ -1534,7 +1534,7 @@ const adminTabs={
       <div class="pt-3 mt-2 border-t border-slate-200 dark:border-slate-700"><h3 class="font-bold text-base mb-3">Ticket-System · Allgemein</h3>${toggleRow('tickets','Support-Ticket-System','Schüler können Tickets erstellen & mit euch chatten')}</div>
       ${toggleRow('apps','Bewerbungs-Modul','Bewerbungsformular für neue Medienscouts freischalten')}
       ${toggleRow('allowReg','Selbst-Registrierung im Login-Fenster','Schüler können sich selbst einen Account anlegen')}
-      <section class="glass p-4 space-y-3">
+      <section class="glass p-4 space-y-3 ${S.user.role==="Admin"?"":"hidden"}">
         <h3 class="font-bold text-sm">Registrierung & Kontowiederherstellung</h3>
         <p class="text-xs opacity-70">Die zweite E-Mail wird bei der Registrierung zunächst nur gespeichert. Sie ist noch kein bestätigter Firebase-Wiederherstellungsweg.</p>
         <label class="text-xs block">Hinweise bei der Registrierung</label>
