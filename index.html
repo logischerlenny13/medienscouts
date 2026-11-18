@@ -312,10 +312,11 @@ html.dark .glass{background:rgba(0,0,0,.22);border:0;backdrop-filter:none}
 .chip{background:rgba(0,0,0,.25);border-radius:.9rem;padding:.6rem 1rem;font-weight:600;cursor:pointer}.chip:hover{background:rgba(255,255,255,.16)}
 .playbtn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:4.5rem;height:4.5rem;border-radius:1.2rem;background:rgba(120,110,90,.85);display:flex;align-items:center;justify-content:center}
 .playbtn img{width:2rem;height:2rem}
-.search-pill-outer{background:#0b5960;border:1px solid rgba(111,224,225,.18);border-radius:9999px;padding:.42rem;box-shadow:0 4px 14px rgba(0,0,0,.22);display:inline-flex;align-items:center;width:clamp(138px,23vw,340px);min-width:0;flex-shrink:0}
-.search-pill-inner{background:#073b40;border-radius:9999px;padding:.55rem 1rem;display:flex;align-items:center;gap:.75rem;transition:box-shadow .15s,background .15s;width:100%;min-width:0;height:3.25rem}
-.search-pill-inner svg{width:1.8rem;height:1.8rem;flex-shrink:0}
-.search-pill-inner input{width:100%;min-width:0;flex:1}
+.search-pill-outer{background:#0b5c60;border:0;border-radius:9999px;padding:5%;box-shadow:0 4px 14px rgba(0,0,0,.22);display:inline-flex;align-items:center;width:clamp(150px,23vw,420px);aspect-ratio:2.697;min-width:0;flex-shrink:0}
+.search-pill-inner{background:#073b40;border-radius:9999px;padding:0 5%;display:flex;align-items:center;gap:4%;transition:box-shadow .15s,background .15s;width:100%;height:100%;min-width:0}
+.search-pill-inner svg{width:16%;height:auto;aspect-ratio:1;flex-shrink:0;stroke-width:1.55}
+.search-pill-inner input{width:100%;min-width:0;flex:1;color:white;font-size:clamp(.75rem,1.1vw,1rem)}
+.search-pill-inner input::placeholder{color:transparent}
 .search-pill-inner:focus-within{box-shadow:0 0 0 2px rgba(103,232,249,.4);background:#042f34}
 `;document.head.appendChild(s)})();
 
@@ -341,7 +342,7 @@ const nav=()=>{
         ${S.settings.personalization?`<button class="ib" title="Hell/Dunkel" onclick="toggleTheme()">${ic(dark?'sun':'moon')}</button>`:''}
         ${S.user?`<button class="ib ${on('profile')}" title="Mein Profil" aria-label="Mein Profil" onclick="S.view='profile';render()">${ic('account')}</button>`:`<button class="ib" title="Anmelden" aria-label="Anmelden" onclick="openAuth('login')">${ic('account')}</button>`}
       </div>
-      <label class="search-pill-outer cursor-text" aria-label="Suchen"><span class="search-pill-inner"><svg class="shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.4"></circle><path d="m15.5 15.5 5 5"></path></svg><input id="s-q" class="bg-transparent outline-none w-24 sm:w-44 focus:w-32 sm:focus:w-52 text-white placeholder-white/70 text-base sm:text-lg transition-all" placeholder="Suchen ..." value="${esc(S.q)}" oninput="doSearch(this.value)"></span></label>
+      <label class="search-pill-outer cursor-text" aria-label="Suchen"><span class="search-pill-inner"><svg class="shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.4"></circle><path d="m15.5 15.5 5 5"></path></svg><input id="s-q" class="bg-transparent outline-none w-24 sm:w-44 focus:w-32 sm:focus:w-52 text-white placeholder-white/70 text-base sm:text-lg transition-all" placeholder=" " aria-label="Suchen" value="${esc(S.q)}" oninput="doSearch(this.value)"></span></label>
     </div></div></header>`;
 };
 
