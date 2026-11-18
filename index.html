@@ -1546,7 +1546,7 @@ const adminTabs={
         <div class="flex items-center gap-3">
           ${S.settings.recoveryGuideImage?'<img src="'+esc(S.settings.recoveryGuideImage)+'" class="h-16 rounded-lg object-cover">':'<span class="text-xs opacity-60">Noch kein Erklärbild</span>'}
           <label class="btn2">Bild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'recoveryGuideImage',1000)"></label>
-          ${S.settings.recoveryGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet('recoveryGuideImage','')">Entfernen</button>':''}
+          ${S.settings.recoveryGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(&quot;recoveryGuideImage&quot;,&quot;&quot;)">Entfernen</button>':''}
         </div>
         <label class="flex gap-2 items-center text-xs"><input id="recovery-scouts" type="checkbox" ${S.settings.recoveryScoutsAllowed?'checked':''}> Medienscouts dürfen Notfall-Verifizierungen durchführen</label>
         <button class="btn w-full" onclick="saveRecoverySettings()">Einstellungen speichern</button>
