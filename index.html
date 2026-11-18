@@ -758,7 +758,7 @@ const modal=(h,fullscreen=false)=>{
   host.querySelector('#app-modal-layer')?.remove();
   const layer=fullscreen?'p-0':'p-4';
   const panel=fullscreen?'!rounded-none w-full h-full max-w-none max-h-none overflow-auto p-5 sm:p-8':'w-full max-w-xl max-h-[90vh] overflow-auto p-6';
-  host.insertAdjacentHTML('beforeend',\`<div id="app-modal-layer" class="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center \${layer}" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 \${panel} relative">\${h}</div></div>\`);
+  host.insertAdjacentHTML('beforeend',`<div id="app-modal-layer" class="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center ${layer}" onclick="if(event.target==this)closeModal()"><div class="glass !bg-white dark:!bg-slate-900 ${panel} relative">${h}</div></div>`);
   icons();
 };
 window.closeModal=()=>{S.open=null;$('#modal')?.querySelector('#app-modal-layer')?.remove();$('#chat-fullscreen')?.querySelector('#app-modal-layer')?.remove()};
