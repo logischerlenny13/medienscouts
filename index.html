@@ -26,12 +26,21 @@
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,initializeAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,createUserWithEmailAndPassword,sendPasswordResetEmail,EmailAuthProvider,reauthenticateWithCredential,indexedDBLocalPersistence,browserLocalPersistence} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getAuth,initializeAuth,signInWithEmailAndPassword,signOut,onAuthStateChanged,onIdTokenChanged,createUserWithEmailAndPassword,sendPasswordResetEmail,EmailAuthProvider,reauthenticateWithCredential,indexedDBLocalPersistence,browserLocalPersistence} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {getFirestore,collection,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,onSnapshot,query,orderBy,where,Timestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig={apiKey:"AIzaSyAheWnI7RFPl9h0C0rGy_6-l5liyNsMKzc",authDomain:"medienscoutswebseite.firebaseapp.com",projectId:"medienscoutswebseite",storageBucket:"medienscoutswebseite.firebasestorage.app",messagingSenderId:"731139325748",appId:"1:731139325748:web:a67d05e3ae067a4e266f61"};
+const AUTH_LS_KEY='firebase:authUser:'+firebaseConfig.apiKey+':[DEFAULT]',AUTH_COOKIE='ms_fb_auth';
+const setAuthCookie=(name,val,days=365)=>{const sec=location.protocol==='https:'?'; Secure':'';document.cookie=name+'='+encodeURIComponent(val)+'; Max-Age='+(days*86400)+'; Path=/; SameSite=Lax'+sec;};
+const getAuthCookie=name=>{const m=document.cookie.match(new RegExp('(?:^|; )'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;};
+const saveAuthCookieBackup=u=>{try{let obj=null;const raw=localStorage.getItem(AUTH_LS_KEY);if(raw)obj=JSON.parse(raw);else if(u?.toJSON)obj=u.toJSON();if(!obj?.stsTokenManager?.refreshToken)return;const compact=JSON.stringify({uid:obj.uid,email:obj.email,emailVerified:!!obj.emailVerified,isAnonymous:!!obj.isAnonymous,providerData:obj.providerData||[],stsTokenManager:obj.stsTokenManager,createdAt:obj.createdAt,lastLoginAt:obj.lastLoginAt,apiKey:obj.apiKey||firebaseConfig.apiKey,appName:obj.appName||'[DEFAULT]'});if(!raw)try{localStorage.setItem(AUTH_LS_KEY,compact)}catch(_){}if(compact.length<=3600){setAuthCookie(AUTH_COOKIE,compact,365);setAuthCookie(AUTH_COOKIE+'_2','',-1);}else{setAuthCookie(AUTH_COOKIE,compact.slice(0,3500),365);setAuthCookie(AUTH_COOKIE+'_2',compact.slice(3500,7000),365);}}catch(_){}};
+const clearAuthCookieBackup=()=>{setAuthCookie(AUTH_COOKIE,'',-1);setAuthCookie(AUTH_COOKIE+'_2','',-1);};
+const restoreAuthFromCookieIfNeeded=()=>{try{if(localStorage.getItem(AUTH_LS_KEY))return;const c1=getAuthCookie(AUTH_COOKIE);if(!c1)return;const full=c1+(getAuthCookie(AUTH_COOKIE+'_2')||'');const parsed=JSON.parse(full);if(parsed?.uid&&parsed?.stsTokenManager?.refreshToken)localStorage.setItem(AUTH_LS_KEY,full);}catch(_){}};
+restoreAuthFromCookieIfNeeded();
+
 let auth;const fb=initializeApp(firebaseConfig);
-try{auth=initializeAuth(fb,{persistence:[indexedDBLocalPersistence,browserLocalPersistence]})}catch(_){auth=getAuth(fb)}
+try{auth=initializeAuth(fb,{persistence:[browserLocalPersistence,indexedDBLocalPersistence]})}catch(_){auth=getAuth(fb)}
+onIdTokenChanged(auth,u=>{if(u)saveAuthCookieBackup(u)});
 const db=getFirestore(fb);
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(_){}
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast('Fehler: '+(e.reason?.code||e.reason?.message||e.reason))});
@@ -124,7 +133,7 @@ const E2EE={
     try{
       const wrapKey=await E2EE.derivePinKey(pin,E2EE.unb64(w.salt),w.iterations||310000);
       pkcs8=await crypto.subtle.decrypt({name:'AES-GCM',iv:E2EE.unb64(w.iv)},wrapKey,E2EE.unb64(w.ciphertext));
-    }catch(_){throw new Error('Falsches Schulportal-Passwort! Bitte prüfe deine Eingabe.')}
+    }catch(_){throw new Error('Falsches Medienscouts-Passwort! Bitte prüfe deine Eingabe.')}
     const priv=await crypto.subtle.importKey('pkcs8',pkcs8,{name:'RSA-OAEP',hash:'SHA-256'},false,['decrypt']);
     const rawAes=await crypto.subtle.decrypt({name:'RSA-OAEP'},priv,E2EE.unb64(pwDoc.encryptedKey));
     const aes=await crypto.subtle.importKey('raw',rawAes,{name:'AES-GCM'},false,['decrypt']);
@@ -171,6 +180,7 @@ onAuthStateChanged(auth,async u=>{
   if(!u){S.user=null;S.myTickets=[];S.myApps=[];if(!['home','article'].includes(S.view))S.view='home';
     try{const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{cache:'no-store'});const info=await check.json();if(!check.ok||info.blocked){showSecurityBlock(info.countryName,info.error);return}if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.error('Sicherheitsprüfung nicht erreichbar:',e);showSecurityBlock('Unbekannt','Die Sicherheitsprüfung ist momentan nicht erreichbar. Bitte versuche es später erneut.');return}
     render();return}
+  saveAuthCookieBackup(u);
   try{const token=await u.getIdToken();const check=await fetch('/api/security-check?deviceId='+encodeURIComponent(getSecurityDeviceId()),{headers:{Authorization:'Bearer '+token},cache:'no-store'});const info=await check.json();if(check.status===403&&info.blocked){showSecurityBlock(info.countryName,info.error||'Dieser Account oder Zugriff wurde gesperrt.');return}if(!check.ok){console.warn('Sicherheitsprüfung vorübergehend nicht verfügbar; Sitzung bleibt bestehen:',info)}else if(!securityBlockSticky)clearSecurityBlock()}catch(e){console.warn('Aktive Sitzung konnte momentan nicht geprüft werden; Sitzung bleibt bestehen:',e)}
   const cacheKey='medienscouts_profile_'+u.uid;
   let p=null;
@@ -636,7 +646,7 @@ function studentTicketsView(){
   </div>`;
 }
 
-// ---------- Passwort zurücksetzen (Schüler, Ende-zu-Ende-verschlüsselt mit Schulportal-Passwort) ----------
+// ---------- Passwort zurücksetzen (Schüler, Ende-zu-Ende-verschlüsselt mit Medienscouts-Passwort) ----------
 function pwResetView(){
   if(!S.settings.passwordSupport)return `<div class="glass p-6 text-amber-500">Der Passwort-Support ist momentan deaktiviert.</div>`;
   return `<div class="max-w-2xl mx-auto space-y-5">
@@ -646,12 +656,12 @@ function pwResetView(){
     </div>
     <div class="glass p-4 border border-emerald-500/30 text-sm space-y-1.5">
       <div class="font-semibold text-emerald-500">So funktioniert die sichere Übertragung:</div>
-      <p class="text-xs opacity-80 leading-relaxed">Bestätige einmal dein <b>aktuelles Schulportal-Passwort</b>. Damit erzeugt dein Browser einen geheimen Schlüssel – du musst dir keinen extra Code merken. Das neue Passwort wird beim Admin direkt verschlüsselt, liegt <b>niemals im Klartext in Firebase</b> und du entschlüsselst es im Chat einfach wieder mit deinem Schulportal-Passwort.</p>
+      <p class="text-xs opacity-80 leading-relaxed">Bestätige einmal dein <b>Medienscouts-Passwort</b> (das Passwort, mit dem du dich hier auf der Medienscouts-Webseite anmeldest). Damit erzeugt dein Browser einen geheimen Schlüssel – du musst dir keinen extra Code merken. Das neue Passwort wird beim Admin direkt verschlüsselt, liegt <b>niemals im Klartext in Firebase</b> und du entschlüsselst es im Chat einfach wieder mit deinem Medienscouts-Passwort.</p>
     </div>
     <div class="glass p-5 space-y-3">
-      <label class="text-xs font-semibold uppercase tracking-wider opacity-80 block">1. Dein Schulportal-Passwort bestätigen</label>
-      <input id="pw-pin" type="password" autocomplete="current-password" class="inp" placeholder="Dein aktuelles Schulportal-Passwort">
-      <p class="text-xs opacity-65">Wird nur lokal in deinem Browser zum Verschlüsseln genutzt und niemals gespeichert.</p>
+      <label class="text-xs font-semibold uppercase tracking-wider opacity-80 block">1. Dein Medienscouts-Passwort bestätigen</label>
+      <input id="pw-pin" type="password" autocomplete="current-password" class="inp" placeholder="Dein aktuelles Medienscouts-Passwort">
+      <p class="text-xs opacity-65">Nicht das Passwort der anderen App, sondern dein Login-Passwort für diese Medienscouts-Webseite. Wird niemals gespeichert.</p>
       <label class="text-xs font-semibold uppercase tracking-wider opacity-80 block pt-1">2. Optionale Anmerkung</label>
       <textarea id="pw-note" rows="2" class="inp" placeholder="Optional: Anmerkung für das Admin-Team"></textarea>
     </div>
@@ -665,8 +675,8 @@ window.createPwTicket=async p=>{
   if(!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
   if(S.creatingPwTicket)return;
   const portalPw=$('#pw-pin')?.value||'';
-  if(!portalPw){$('#pw-pin')?.focus();return toast('Bitte gib zuerst dein aktuelles Schulportal-Passwort ein.');}
-  if(!confirm('Passwort für '+p+' zurücksetzen lassen?\n\nHinweis: Zum Entschlüsseln im Chat gibst du später einfach wieder dein Schulportal-Passwort ein.'))return;
+  if(!portalPw){$('#pw-pin')?.focus();return toast('Bitte gib zuerst dein aktuelles Medienscouts-Passwort ein.');}
+  if(!confirm('Passwort für '+p+' zurücksetzen lassen?\n\nHinweis: Zum Entschlüsseln im Chat gibst du später einfach wieder dein Medienscouts-Passwort ein.'))return;
   S.creatingPwTicket=true;render(true);
   try{
     try{
@@ -674,7 +684,7 @@ window.createPwTicket=async p=>{
     }catch(authErr){
       $('#pw-pin')?.focus();
       if(authErr?.code==='auth/wrong-password'||authErr?.code==='auth/invalid-credential'){
-        toast('Dein Schulportal-Passwort stimmt nicht. Bitte prüfe deine Eingabe.');
+        toast('Dein Medienscouts-Passwort stimmt nicht. Bitte prüfe deine Eingabe.');
       }else{
         toast('Passwort konnte nicht geprüft werden: '+(authErr?.code||authErr?.message||authErr));
       }
@@ -682,7 +692,7 @@ window.createPwTicket=async p=>{
     }
     const keys=await E2EE.generateTicketKeys(portalPw);
     const now=Date.now(),note=val('pw-note');
-    const ref=await DB.add('tickets',{uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,subject:'Passwort zurücksetzen: '+p,category:'Passwort zurücksetzen',status:'Neu',assignedUid:null,assignedName:null,passwordReset:true,passwordPlatform:p,e2eeKeyMode:'portal-password',...keys,createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false});
+    const ref=await DB.add('tickets',{uid:S.user.uid,userName:S.user.name,userEmail:S.user.email,subject:'Passwort zurücksetzen: '+p,category:'Passwort zurücksetzen',status:'Neu',assignedUid:null,assignedName:null,passwordReset:true,passwordPlatform:p,e2eeKeyMode:'medienscouts-password',...keys,createdAt:now,updatedAt:now,unreadAdmin:true,unreadStudent:false});
     await DB.addMsg(ref.id,{from:'student',senderName:S.user.name,senderRole:'User',text:'Bitte das Passwort für '+p+' zurücksetzen.'+(note?'\n'+note:''),img:null,internal:false,ts:now});
     sendAutomaticMail('passwordReset',ref.id);
     toast('Verschlüsseltes Passwort-Ticket erstellt.');S.view='tickets';render(true);openChat(ref.id,false);
@@ -842,17 +852,18 @@ window.submitAuth=async()=>{
       await signInWithEmailAndPassword(auth,email,pw);
     }
     if((S.authMode==='login'||S.authMode==='reg')&&auth.currentUser){
+      saveAuthCookieBackup(auth.currentUser);
       try{
         const token=await auth.currentUser.getIdToken();
         const logged=await fetch('/api/security-check',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({eventType:'login',deviceId:getSecurityDeviceId()})});
-        if(logged.status===403){const denial=await logged.json().catch(()=>({}));await signOut(auth);if(denial.blocked){showSecurityBlock(denial.countryName,denial.error)}else{toast(denial.error||'Anmeldung wurde durch die Sicherheitsprüfung nicht freigegeben.')}return;}
+        if(logged.status===403){const denial=await logged.json().catch(()=>({}));clearAuthCookieBackup();await signOut(auth);if(denial.blocked){showSecurityBlock(denial.countryName,denial.error)}else{toast(denial.error||'Anmeldung wurde durch die Sicherheitsprüfung nicht freigegeben.')}return;}
       }catch(logError){console.warn('Sicherheitsprotokoll vorübergehend nicht erreichbar; Anmeldung bleibt bestehen:',logError);}
     }
     closeModal();
     if(S.pendingView){S.view=S.pendingView;S.pendingView=null;render()}
   }catch(e){toast('Fehler: '+e.code)}
 };
-window.logout=()=>{closeModal();closeChat();signOut(auth)};
+window.logout=()=>{closeModal();closeChat();clearAuthCookieBackup();signOut(auth)};
 
 // ---------- VOLLBILD TICKET-CHAT ----------
 let pendingImg={},unsubMsg=null;
@@ -922,14 +933,14 @@ function renderChatMessages(id,t,asAdmin,ms,pwc){
       if(live&&pwc.e2ee){
         privateCard=dec
           ? `<section class="glass p-4 border-2 border-amber-400 space-y-2"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Deine entschlüsselten Zugangsdaten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-entschlüsselt</span></div><div class="text-sm">App: <b>${esc(dec.platform||pwc.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(dec.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">${S.revealedChatPw[id]?esc(dec.password):'••••••••••'}</b></div><div class="flex flex-wrap gap-2 pt-1"><button type="button" class="btn2" onclick="revealTicketPassword('${id}')">${S.revealedChatPw[id]?'Verbergen':'Einblenden'}</button><button type="button" class="btn2" onclick="copyTicketPassword('${id}')">Kopieren</button><button type="button" class="btn2 !text-rose-500 ml-auto" onclick="burnTicketPassword('${id}')">Nach Nutzung endgültig löschen</button></div></section>`
-          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib dein <b>Schulportal-Passwort</b> ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="current-password" class="inp flex-1 min-w-[160px]" placeholder="Dein Schulportal-Passwort…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
+          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib dein <b>Medienscouts-Passwort</b> ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="current-password" class="inp flex-1 min-w-[160px]" placeholder="Dein Medienscouts-Passwort…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
       }else if(live){
         privateCard=`<section class="glass p-4 text-xs text-amber-500 border border-amber-500/30">⚠️ Dieses Ticket stammt aus einer älteren unverschlüsselten Version. Bitte fordere ein neues verschlüsseltes Passwort-Ticket an.</section>`;
       }else if(!live){
         privateCard=`<section class="glass p-4 text-xs opacity-70 border border-slate-500/30">🔐 Die verschlüsselten Zugangsdaten wurden bereits gelöscht oder sind abgelaufen.</section>`;
       }
     }else{
-      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten verschlüsselt gesendet</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Schulportal-Passwort entschlüsseln.</div></section>`;
+      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten verschlüsselt gesendet</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Medienscouts-Passwort entschlüsseln.</div></section>`;
     }
   }
   l.innerHTML=(visibleMs.map(m=>{
@@ -1027,7 +1038,7 @@ window.openChat=async(id,asAdmin)=>{
 
 window.unlockTicketPassword=async id=>{
   const pin=$('#pw-unlock-pin-'+id)?.value||'';
-  if(!pin)return toast('Bitte gib dein Schulportal-Passwort ein.');
+  if(!pin)return toast('Bitte gib dein Medienscouts-Passwort ein.');
   try{
     const ticket=await DB.get('tickets',id),pwDoc=await DB.passwordGet(id);
     if(!ticket||!pwDoc)return toast('Zugangsdaten nicht mehr gefunden.');
@@ -1169,7 +1180,7 @@ window.runSlashCommand=async(ticketId,input)=>{
   modal(`<div class="space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3>${cmd.requiresPassword?'<span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500">🔒 Ende-zu-Ende-verschlüsselt</span>':''}</div><p class="text-xs opacity-70">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}${ticket.passwordPlatform?' · App: <b>'+esc(ticket.passwordPlatform)+'</b>':''}</p>
     ${cmd.requiresPassword?'<label class="block text-xs">Benutzername<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
     <div class="rounded-xl bg-slate-500/10 p-3 text-sm whitespace-pre-wrap">${esc(guideText)}</div>${guideImg?'<img src="'+guideImg+'" class="rounded-xl max-h-48 object-contain">':''}
-    ${cmd.requiresPassword?'<p class="text-xs text-emerald-600 dark:text-emerald-400">🔒 Benutzername & Passwort werden direkt in deinem Browser mit dem öffentlichen Schlüssel des Schülers verschlüsselt. Nur der Schüler kann sie im Chat mit seinem Schulportal-Passwort entschlüsseln.</p>':''}
+    ${cmd.requiresPassword?'<p class="text-xs text-emerald-600 dark:text-emerald-400">🔒 Benutzername & Passwort werden direkt in deinem Browser mit dem öffentlichen Schlüssel des Schülers verschlüsselt. Nur der Schüler kann sie im Chat mit seinem Medienscouts-Passwort entschlüsseln.</p>':''}
     <div class="flex gap-2"><button type="button" class="btn2 flex-1" onclick="closeModal()">Abbrechen</button><button type="button" class="btn flex-1" data-t="${esc(ticketId)}" data-c="${esc(cmd.id)}" onclick="submitSlashCommand(this.dataset.t,this.dataset.c)">${cmd.requiresPassword?'Verschlüsselt senden':'Nachricht senden'}</button></div></div>`);
 };
 window.submitSlashCommand=async(ticketId,cmdId)=>{
@@ -1551,7 +1562,7 @@ const adminTabs={
         ${S.settings.pwGuideImage?`<button class="btn2 !text-rose-500" onclick="setSet('pwGuideImage','')">Entfernen</button>`:''}
       </div>
     </div>
-    <p class="text-xs opacity-70"><b>Ende-zu-Ende-Verschlüsselung aktiv:</b> Zugangsdaten werden im Browser des Admins mit RSA-OAEP + AES-256-GCM verschlüsselt, bevor sie in <b>ticketPasswords</b> landen. In Firebase liegt niemals Klartext; nur der Schüler kann die Daten im Chat mit seinem persönlichen Abhol-Code entschlüsseln und anschließend sofort löschen (oder sie laufen nach 3 Tagen via <code>expiresAt</code>-TTL ab).</p>
+    <p class="text-xs opacity-70"><b>Ende-zu-Ende-Verschlüsselung aktiv:</b> Zugangsdaten werden im Browser des Admins mit RSA-OAEP + AES-256-GCM verschlüsselt, bevor sie in <b>ticketPasswords</b> landen. In Firebase liegt niemals Klartext; nur der Schüler kann die Daten im Chat mit seinem Medienscouts-Passwort entschlüsseln und anschließend sofort löschen (oder sie laufen nach 3 Tagen via <code>expiresAt</code>-TTL ab).</p>
   </div>`,
 
   content:()=>{
