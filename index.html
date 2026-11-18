@@ -1357,6 +1357,13 @@ window.savePwGuideText=async()=>{
   await DB.set('settings','main',{...S.settings,setupDone:true,pwGuideText:$('#pw-guide-text')?.value||''});
   toast('Anleitungstext gespeichert.');
 };
+window.saveRecoverySettings=async()=>{
+ if(S.user?.role!=='Admin')return toast('Nur Admins dürfen diese Einstellungen ändern.');
+ const recoveryContact=val('recovery-contact');
+ if(recoveryContact&&!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(recoveryContact))return toast('Bitte eine gültige Kontaktadresse eintragen.');
+ await DB.set('settings','main',{...S.settings,setupDone:true,registrationWarnings:$('#registration-warnings')?.value||'',recoveryContact,recoveryIntro:$('#recovery-intro')?.value||'',recoveryScoutsAllowed:!!$('#recovery-scouts')?.checked});
+ toast('Wiederherstellungs-Einstellungen gespeichert.');
+};
 window.saveBrand=async()=>{
   await DB.set('settings','main',{...S.settings,setupDone:true,schoolName:val('set-title')||'Schulportal',subTitle:val('set-sub')});
   toast('Texte gespeichert.');
@@ -1519,6 +1526,23 @@ const adminTabs={
       <div class="pt-3 mt-2 border-t border-slate-200 dark:border-slate-700"><h3 class="font-bold text-base mb-3">Ticket-System · Allgemein</h3>${toggleRow('tickets','Support-Ticket-System','Schüler können Tickets erstellen & mit euch chatten')}</div>
       ${toggleRow('apps','Bewerbungs-Modul','Bewerbungsformular für neue Medienscouts freischalten')}
       ${toggleRow('allowReg','Selbst-Registrierung im Login-Fenster','Schüler können sich selbst einen Account anlegen')}
+      <section class="glass p-4 space-y-3">
+        <h3 class="font-bold text-sm">Registrierung & Kontowiederherstellung</h3>
+        <p class="text-xs opacity-70">Die zweite E-Mail wird bei der Registrierung zunächst nur gespeichert. Sie ist noch kein bestätigter Firebase-Wiederherstellungsweg.</p>
+        <label class="text-xs block">Hinweise bei der Registrierung</label>
+        <textarea id="registration-warnings" rows="4" class="inp">\${esc(S.settings.registrationWarnings||'Bitte nutze ein sicheres Passwort und teile es mit niemandem.')}</textarea>
+        <label class="text-xs block">Kontaktadresse für Notfälle</label>
+        <input id="recovery-contact" type="email" class="inp" placeholder="kontakt@schule.de" value="\${esc(S.settings.recoveryContact||'')}">
+        <label class="text-xs block">Erklärung zur Wiederherstellung</label>
+        <textarea id="recovery-intro" rows="3" class="inp">\${esc(S.settings.recoveryIntro||'Wenn du keinen Zugriff mehr auf Schulportal oder WebWeaver hast, wende dich an die Medienscouts oder die Administration.')}</textarea>
+        <div class="flex items-center gap-3">
+          \${S.settings.recoveryGuideImage?'<img src="'+esc(S.settings.recoveryGuideImage)+'" class="h-16 rounded-lg object-cover">':'<span class="text-xs opacity-60">Noch kein Erklärbild</span>'}
+          <label class="btn2">Bild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'recoveryGuideImage',1000)"></label>
+          \${S.settings.recoveryGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(\\'recoveryGuideImage\\',\\'\\')">Entfernen</button>':''}
+        </div>
+        <label class="flex gap-2 items-center text-xs"><input id="recovery-scouts" type="checkbox" \${S.settings.recoveryScoutsAllowed?'checked':''}> Medienscouts dürfen Notfall-Verifizierungen durchführen</label>
+        <button class="btn w-full" onclick="saveRecoverySettings()">Einstellungen speichern</button>
+      </section>
       ${toggleRow('artFeedback','Hilfreich-Abfrage unter Artikeln (👍/👎)','Zeigt unter jeder Anleitung die Frage „Hat dir dieser Artikel geholfen?“')}
       ${toggleRow('board','Schwarzes Brett (Fundsachen & News)','Zeigt auf der Startseite aktuelle Meldungen & digitale Fundsachen')}
       ${toggleRow('surveys','Umfrage-Modul','Schaltet den Bereich für anonyme & nicht-anonyme Umfragen frei')}
