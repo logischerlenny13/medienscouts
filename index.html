@@ -1555,7 +1555,7 @@ const adminTabs={
         <h3 class="font-bold text-sm">Hilfe-Grafik für die Schaltflächen</h3>
         <p class="text-xs opacity-70">Das Fragezeichen oben in der Navigation öffnet dieses Bild bildschirmfüllend. Lade hier eine Grafik hoch, auf der die Funktionen und Knöpfe erklärt werden.</p>
         ${S.settings.buttonGuideImage?'<img src="'+esc(S.settings.buttonGuideImage)+'" onclick="zoom(this.src)" class="max-h-40 rounded-xl object-contain cursor-zoom-in">':'<p class="text-xs opacity-60">Noch keine Hilfe-Grafik hochgeladen.</p>'}
-        <div class="flex gap-2 flex-wrap"><label class="btn2">Erklärbild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'buttonGuideImage',1800)"></label>${S.settings.buttonGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(\'buttonGuideImage\',\'\')">Entfernen</button>':''}</div>
+        <div class="flex gap-2 flex-wrap"><label class="btn2">Erklärbild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'buttonGuideImage',1800)"></label>${S.settings.buttonGuideImage?'<button class="btn2 !text-rose-500" onclick="setSet(&quot;buttonGuideImage&quot;,&quot;&quot;)">Entfernen</button>':''}</div>
       </section>
       <section class="glass p-4 space-y-3 ${S.user.role==="Admin"?"":"hidden"}">
         <h3 class="font-bold text-sm">Registrierung & Kontowiederherstellung</h3>
