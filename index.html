@@ -640,7 +640,6 @@ function studentTicketsView(){
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold text-sm">${esc(t.subject||t.category)}</span>
               ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
-              ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-500 font-semibold">🔒 E2EE</span>':''}
               ${badge(t.status)}
               ${t.assignedName?`<span class="text-[11px] px-2 py-0.5 rounded bg-slate-500/15">Betreut von: ${esc(t.assignedName)}</span>`:''}
               ${t.unreadStudent?`<span class="text-[11px] bg-blue-600 text-white px-2 py-0.5 rounded-full">Neue Nachricht</span>`:''}
@@ -975,15 +974,15 @@ function renderChatMessages(id,t,asAdmin,ms,pwc){
     if(isOwner){
       if(live&&pwc.e2ee){
         privateCard=dec
-          ? `<section class="glass p-4 border-2 border-amber-400 space-y-2"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Deine entschlüsselten Zugangsdaten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-entschlüsselt</span></div><div class="text-sm">App: <b>${esc(dec.platform||pwc.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(dec.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">${S.revealedChatPw[id]?esc(dec.password):'••••••••••'}</b></div><div class="flex flex-wrap gap-2 pt-1"><button type="button" class="btn2" onclick="revealTicketPassword('${id}')">${S.revealedChatPw[id]?'Verbergen':'Einblenden'}</button><button type="button" class="btn2" onclick="copyTicketPassword('${id}')">Kopieren</button><button type="button" class="btn2 !text-rose-500 ml-auto" onclick="burnTicketPassword('${id}')">Nach Nutzung endgültig löschen</button></div></section>`
-          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib dein <b>Medienscouts-Passwort</b> ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="current-password" class="inp flex-1 min-w-[160px]" placeholder="Dein Medienscouts-Passwort…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
+          ? `<section class="glass p-4 border-2 border-amber-400 space-y-2"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Deine Zugangsdaten</div></div><div class="text-sm">App: <b>${esc(dec.platform||pwc.platform||'')}</b></div><div class="text-sm">Benutzername: <b>${esc(dec.username||'—')}</b></div><div class="text-sm">Passwort: <b id="pw-value-${id}">${S.revealedChatPw[id]?esc(dec.password):'••••••••••'}</b></div><div class="flex flex-wrap gap-2 pt-1"><button type="button" class="btn2" onclick="revealTicketPassword('${id}')">${S.revealedChatPw[id]?'Verbergen':'Einblenden'}</button><button type="button" class="btn2" onclick="copyTicketPassword('${id}')">Kopieren</button><button type="button" class="btn2 !text-rose-500 ml-auto" onclick="burnTicketPassword('${id}')">Nach Nutzung endgültig löschen</button></div></section>`
+          : `<section class="glass p-4 border-2 border-emerald-500/60 space-y-3"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Neue Zugangsdaten erhalten</div></div><p class="text-xs opacity-75">App: <b>${esc(pwc.platform||t.passwordPlatform||'')}</b> · Gib dein <b>Medienscouts-Passwort</b> ein, um die Zugangsdaten nur in deinem Browser zu entschlüsseln.</p><div class="flex gap-2 flex-wrap"><input id="pw-unlock-pin-${id}" type="password" autocomplete="current-password" class="inp flex-1 min-w-[160px]" placeholder="Dein Medienscouts-Passwort…" onkeydown="if(event.key==='Enter')unlockTicketPassword('${id}')"><button type="button" class="btn !bg-emerald-600 hover:!bg-emerald-500" onclick="unlockTicketPassword('${id}')">Entschlüsseln</button></div></section>`;
       }else if(live){
         privateCard=`<section class="glass p-4 text-xs text-amber-500 border border-amber-500/30">⚠️ Dieses Ticket stammt aus einer älteren unverschlüsselten Version. Bitte fordere ein neues verschlüsseltes Passwort-Ticket an.</section>`;
       }else if(!live){
         privateCard=`<section class="glass p-4 text-xs opacity-70 border border-slate-500/30">🔐 Die verschlüsselten Zugangsdaten wurden bereits gelöscht oder sind abgelaufen.</section>`;
       }
     }else{
-      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten verschlüsselt gesendet</div><span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">🔒 Ende-zu-Ende-verschlüsselt</span></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Medienscouts-Passwort entschlüsseln.</div></section>`;
+      privateCard=`<section class="glass p-4 text-sm space-y-2 border border-emerald-500/30"><div class="flex items-center justify-between gap-2 flex-wrap"><div class="font-bold">🔐 Zugangsdaten gesendet</div></div><div class="rounded bg-black h-6 w-48"></div><div class="text-xs opacity-65">In Firebase liegt nur verschlüsselter Text. Nur der Schüler kann mit seinem Medienscouts-Passwort entschlüsseln.</div></section>`;
     }
   }
   l.innerHTML=(visibleMs.map(m=>{
@@ -1037,15 +1036,13 @@ window.openChat=async(id,asAdmin)=>{
         </div>
       </div>
 
-      ${asAdmin?`<div class="flex items-center gap-2 shrink-0">
+      ${t.passwordReset?'<span class="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-3 py-1.5">🔒 Ende-zu-Ende</span>':''}${asAdmin?`<div class="flex items-center gap-2 shrink-0">
         <button type="button" class="btn2 !text-blue-500" onclick="claimTicket('${id}')"><i data-lucide="hand" class="w-4 h-4"></i><span class="hidden sm:inline">Ich übernehme</span></button>
         <select class="inp !w-auto !py-1.5 !px-2.5 text-xs" onchange="updStatus('${id}',this.value)">
           ${['Neu','In Bearbeitung','Gelöst'].map(s=>`<option ${s==t.status?'selected':''}>${s}</option>`).join('')}
         </select>
       </div>`:''}
     </div>
-    ${t.passwordReset?`<div class="bg-emerald-600/15 border-b border-emerald-500/30 px-4 py-2 text-xs text-center text-emerald-700 dark:text-emerald-300 font-medium">🔒 <b>Ende-zu-Ende-verschlüsselt</b> · Neue Passwörter werden im Browser verschlüsselt und niemals im Klartext in Firebase gespeichert.</div>`:''}
-
     <div id="c-list" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 max-w-4xl w-full mx-auto"></div>
 
     <div class="glass !rounded-none border-x-0 border-b-0 p-3 sm:p-4">
@@ -1718,7 +1715,6 @@ const adminTabs={
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
             ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
-            ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-500 font-semibold">🔒 E2EE</span>':''}
             ${t.reopened?'<span class="text-[10px] px-2 py-0.5 rounded bg-amber-500 text-white">Wieder geöffnet</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
