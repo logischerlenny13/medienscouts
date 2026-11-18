@@ -784,9 +784,9 @@ window.openAuth=(mode='login')=>{
 
 function loginFormView(mode){
  let h='<div><label class="text-xs opacity-70 block mb-1">E-Mail-Adresse</label><input id="l-mail" type="email" class="inp" placeholder="name@schule.de" value="'+(S.needSetup?'admin@schule.de':'')+'"></div>';
- if(mode!=='reset')h+='<div><div class="flex items-center justify-between mb-1"><label class="text-xs opacity-70">Passwort</label>'+(mode==='login'?'<button class="text-xs text-blue-500 hover:underline cursor-pointer" onclick="openAuth(\\'reset\\')">Passwort vergessen?</button>':'')+'</div><input id="l-pw" type="password" class="inp" placeholder="••••••••" value="'+(S.needSetup?'scout123':'')+'" onkeydown="if(event.key===\\'Enter\\')submitAuth()"></div>';
+ if(mode!=='reset')h+='<div><div class="flex items-center justify-between mb-1"><label class="text-xs opacity-70">Passwort</label>'+(mode==='login'?'<button class="text-xs text-blue-500 hover:underline cursor-pointer" onclick="openAuth(\'reset\')">Passwort vergessen?</button>':'')+'</div><input id="l-pw" type="password" class="inp" placeholder="••••••••" value="'+(S.needSetup?'scout123':'')+'" onkeydown="if(event.key===\'Enter\')submitAuth()"></div>';
  h+='<button class="btn w-full" onclick="submitAuth()">'+(mode==='login'?'Anmelden':'Reset-E-Mail senden')+'</button>';
- if(mode==='reset')h+='<button class="btn2 w-full" onclick="openAuth(\\'login\\')">Zurück zum Login</button>';
+ if(mode==='reset')h+='<button class="btn2 w-full" onclick="openAuth(\'login\')">Zurück zum Login</button>';
  if(mode==='login')h+='<button class="text-xs text-teal-700 dark:text-teal-300 hover:underline w-full" onclick="openRecoveryInfo()">Kein Zugriff auf Schulportal / WebWeaver?</button>';
  return '<div class="space-y-3">'+h+'</div>';
 }
@@ -851,7 +851,7 @@ window.openRecoveryInfo=()=>{
 
 window.submitAuth=async()=>{
   let email=val('l-mail'),pw=val('l-pw'),name=val('l-name'),klass=val('l-class');
-  if(S.authMode==='reg'){email=S.regDraft?.email||'';pw=S.regDraft?.password||'';name=S.regDraft?.name||'';klass=S.regDraft?.klass||'Klasse 8';S.regDraft.recoveryEmail=val('reg-recovery-email');if(S.regDraft.recoveryEmail&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(S.regDraft.recoveryEmail))return toast('Bitte eine gültige zweite E-Mail-Adresse eingeben.');}
+  if(S.authMode==='reg'){email=S.regDraft?.email||'';pw=S.regDraft?.password||'';name=S.regDraft?.name||'';klass=S.regDraft?.klass||'Klasse 8';S.regDraft.recoveryEmail=val('reg-recovery-email');if(S.regDraft.recoveryEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(S.regDraft.recoveryEmail))return toast('Bitte eine gültige zweite E-Mail-Adresse eingeben.');}
   if(!email)return toast('Bitte E-Mail-Adresse eingeben.');
   try{
     let securityPreflight=null;
