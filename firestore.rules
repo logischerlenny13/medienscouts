@@ -122,6 +122,7 @@ service cloud.firestore {
           && request.auth.uid == userId
           && request.resource.data.role == 'Schüler'
           && request.resource.data.email == request.auth.token.email
+          && request.resource.data.get('recoveryEmailVerified', false) == false
           && get(/databases/$(database)/documents/settings/main).data.get('allowReg', true) == true);
       allow create, update, delete: if isAdmin();
       allow update: if (isStaff()
@@ -133,8 +134,9 @@ service cloud.firestore {
         && request.resource.data.role == resource.data.role
         && request.resource.data.email == resource.data.email
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'name', 'klass', 'preferences', 'mediaState'
-        ]));
+          'name', 'klass', 'preferences', 'mediaState', 'recoveryEmail'
+        ])
+        && request.resource.data.get('recoveryEmailVerified', false) == resource.data.get('recoveryEmailVerified', false));
       allow delete: if isAdmin();
     }
 
