@@ -76,6 +76,7 @@ const S={
   needSetup:false,videos:[],articles:[],boardItems:[],surveys:[],tickets:[],apps:[],myTickets:[],myApps:[],users:[],pubUsers:[],feedbackItems:[],helpArticles:[],privateMessages:[],securityIPs:[],securityOverrides:[],securityBlockedAccounts:[],securityBlockedDevices:[],securitySetupRequired:false,securityLoading:false,securityAlertCount:0,
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
   adminTab:'settings',authMode:'login',q:'',cat:'Alle',edit:null,open:null,pageViews:0,
+  regStep:1,regDraft:{},
   chatNoteMode:false,surveyBuilderQs:[],svDraft:null,surveyResults:[],activeResultSurvey:null,unsubs:[],unsubSurveyResp:null,
   decryptedChatPw:{},revealedChatPw:{},openingChatId:null,creatingPwTicket:false
 };
@@ -755,6 +756,7 @@ const modal=h=>{
 window.closeModal=()=>{S.open=null;$('#modal')?.querySelector('#app-modal-layer')?.remove();$('#chat-fullscreen')?.querySelector('#app-modal-layer')?.remove()};
 
 window.openAuth=(mode='login')=>{
+  if(mode==='reg'&&S.authMode!=='reg'){S.regStep=1;S.regDraft={name:'',klass:'Klasse 8',email:'',password:'',recoveryEmail:'',acceptedWarnings:false};}
   S.authMode=mode;S.open='login';
   const regAllowed=S.settings.allowReg;
   modal(`<button class="absolute top-4 right-4 btn2" onclick="closeModal()"><i data-lucide="x" class="w-4 h-4"></i></button>
@@ -770,32 +772,46 @@ window.openAuth=(mode='login')=>{
         <button class="py-2 rounded-lg cursor-pointer ${mode=='reg'?'bg-white dark:bg-slate-900 shadow-xs':''}" onclick="openAuth('reg')">Registrieren</button>
       </div>`:''}
 
-      <div class="space-y-3">
-        ${mode=='reg'?`
-          <div><label class="text-xs opacity-70 block mb-1">Vor- und Nachname</label><input id="l-name" class="inp" placeholder="Max Mustermann"></div>
-          <div><label class="text-xs opacity-70 block mb-1">Klasse / Stufe</label><select id="l-class" class="inp">${CLASSES.filter(c=>c!='Alle').map(c=>`<option>${c}</option>`).join('')}</select></div>
-        `:''}
-        <div>
-          <label class="text-xs opacity-70 block mb-1">E-Mail-Adresse</label>
-          <input id="l-mail" type="email" class="inp" placeholder="name@schule.de" value="${S.needSetup?'admin@schule.de':''}">
-        </div>
-        ${mode!='reset'?`<div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="text-xs opacity-70">Passwort</label>
-            ${mode=='login'?`<button class="text-xs text-blue-500 hover:underline cursor-pointer" onclick="openAuth('reset')">Passwort vergessen?</button>`:''}
-          </div>
-          <input id="l-pw" type="password" class="inp" placeholder="••••••••" value="${S.needSetup?'scout123':''}" onkeydown="if(event.key=='Enter')submitAuth()">
-        </div>`:''}
-
-        <button class="btn w-full" onclick="submitAuth()">${mode=='login'?'Anmelden':mode=='reg'?'Konto erstellen':'Reset-E-Mail senden'}</button>
-        ${mode=='reset'?`<button class="btn2 w-full" onclick="openAuth('login')">Zurück zum Login</button>`:''}
-      </div>
+      ${mode=='reg'?registrationWizardView():loginFormView(mode)}
 
       ${S.needSetup?`<div class="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs space-y-2">
         <b>Ersteinrichtung:</b> Noch kein Admin angelegt. Klicke hier, um den ersten Haupt-Admin samt Beispieldaten einzurichten:
         <button class="btn w-full !bg-amber-600 hover:!bg-amber-500" onclick="setup()">Ersten Admin & Startdaten anlegen</button>
       </div>`:''}
     </div>`);
+};
+
+
+function loginFormView(mode){
+ let h='<div><label class="text-xs opacity-70 block mb-1">E-Mail-Adresse</label><input id="l-mail" type="email" class="inp" placeholder="name@schule.de" value="'+(S.needSetup?'admin@schule.de':'')+'"></div>';
+ if(mode!=='reset')h+='<div><div class="flex items-center justify-between mb-1"><label class="text-xs opacity-70">Passwort</label>'+(mode==='login'?'<button class="text-xs text-blue-500 hover:underline cursor-pointer" onclick="openAuth(\\'reset\\')">Passwort vergessen?</button>':'')+'</div><input id="l-pw" type="password" class="inp" placeholder="••••••••" value="'+(S.needSetup?'scout123':'')+'" onkeydown="if(event.key===\\'Enter\\')submitAuth()"></div>';
+ h+='<button class="btn w-full" onclick="submitAuth()">'+(mode==='login'?'Anmelden':'Reset-E-Mail senden')+'</button>';
+ if(mode==='reset')h+='<button class="btn2 w-full" onclick="openAuth(\\'login\\')">Zurück zum Login</button>';
+ return '<div class="space-y-3">'+h+'</div>';
+}
+function registrationWizardView(){
+ const d=S.regDraft||{},step=S.regStep||1,warnings=S.settings.registrationWarnings||'Bitte nutze ein sicheres Passwort und teile es mit niemandem.';
+ const names=['Schul-E-Mail','Passwort','Hinweise','Zweite E-Mail'];
+ let h='<div class="flex items-center gap-2 mb-4">';
+ for(let n=1;n<=4;n++)h+='<div class="flex flex-col items-center gap-1"><span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold '+(n<=step?'bg-teal-700 text-white':'bg-slate-200 dark:bg-slate-700')+'">'+n+'</span><span class="text-[10px] opacity-60">'+names[n-1]+'</span></div>'+(n<4?'<div class="h-px flex-1 bg-slate-300 dark:bg-slate-700 mb-4"></div>':'');
+ h+='</div><div class="font-semibold mb-1">Schritt '+step+' von 4</div>';
+ if(step===1)h+='<div class="space-y-3"><input id="reg-email" type="email" class="inp" placeholder="Schul-E-Mail-Adresse" value="'+esc(d.email||'')+'"><input id="reg-name" class="inp" placeholder="Vor- und Nachname" value="'+esc(d.name||'')+'"><select id="reg-class" class="inp">'+CLASSES.filter(c=>c!=='Alle').map(c=>'<option '+((d.klass||'Klasse 8')===c?'selected':'')+'>'+esc(c)+'</option>').join('')+'</select></div>';
+ if(step===2)h+='<div class="space-y-3"><input id="reg-password" type="password" class="inp" autocomplete="new-password" placeholder="Passwort"><input id="reg-password-repeat" type="password" class="inp" autocomplete="new-password" placeholder="Passwort wiederholen"></div>';
+ if(step===3)h+='<div class="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4 text-sm whitespace-pre-wrap">'+esc(warnings)+'</div><label class="flex gap-3 text-sm mt-3"><input id="reg-accept" type="checkbox" class="mt-1" '+(d.acceptedWarnings?'checked':'')+'>Ich habe die Hinweise gelesen und akzeptiere sie.</label>';
+ if(step===4)h+='<p class="text-sm opacity-75 mb-3">Optional: Hinterlege eine private E-Mail-Adresse für einen späteren Wiederherstellungsweg.</p><input id="reg-recovery-email" type="email" class="inp" placeholder="Private E-Mail-Adresse" value="'+esc(d.recoveryEmail||'')+'"><p class="text-xs text-amber-700 dark:text-amber-300 mt-2">Die Adresse wird zunächst nur gespeichert und ist noch nicht bestätigt. Sie kann noch keine Firebase-Passwortzurücksetzung auslösen.</p>';
+ h+='<div class="flex gap-2 mt-4">'+(step>1?'<button class="btn2 flex-1" onclick="registrationBack()">Zurück</button>':'')+'<button class="btn flex-1" onclick="'+(step===4?'submitAuth()':'registrationNext()')+'">'+(step===4?'Konto erstellen':'Weiter')+'</button></div>';
+ return h;
+}
+window.registrationNext=()=>{
+ const d={...(S.regDraft||{})},step=S.regStep;
+ if(step===1){d.email=val('reg-email');d.name=val('reg-name');d.klass=val('reg-class');if(!d.email||!d.name)return toast('Bitte E-Mail-Adresse und Namen eintragen.');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email))return toast('Bitte eine gültige E-Mail-Adresse eingeben.');}
+ if(step===2){d.password=$('#reg-password')?.value||'';const again=$('#reg-password-repeat')?.value||'';if(d.password.length<6)return toast('Das Passwort muss mindestens 6 Zeichen haben.');if(d.password!==again)return toast('Die Passwörter stimmen nicht überein.');}
+ if(step===3){d.acceptedWarnings=!!$('#reg-accept')?.checked;if(!d.acceptedWarnings)return toast('Bitte bestätige die Hinweise.');}
+ S.regDraft=d;S.regStep=Math.min(4,step+1);openAuth('reg');
+};
+window.registrationBack=()=>{
+ const d={...(S.regDraft||{})};if(S.regStep===4)d.recoveryEmail=val('reg-recovery-email');
+ S.regDraft=d;S.regStep=Math.max(1,(S.regStep||1)-1);openAuth('reg');
 };
 
 let securityBlockSticky=false;
@@ -826,7 +842,8 @@ function getSecurityDeviceId(){
   return id;
 }
 window.submitAuth=async()=>{
-  const email=val('l-mail'),pw=val('l-pw'),name=val('l-name'),klass=val('l-class');
+  let email=val('l-mail'),pw=val('l-pw'),name=val('l-name'),klass=val('l-class');
+  if(S.authMode==='reg'){email=S.regDraft?.email||'';pw=S.regDraft?.password||'';name=S.regDraft?.name||'';klass=S.regDraft?.klass||'Klasse 8';}
   if(!email)return toast('Bitte E-Mail-Adresse eingeben.');
   try{
     let securityPreflight=null;
@@ -846,8 +863,10 @@ window.submitAuth=async()=>{
     if(S.authMode=='reg'){
       if(!S.settings.allowReg)return toast('Selbst-Registrierung ist deaktiviert.');
       if(!name)return toast('Bitte gib deinen Namen an.');
+      if(!S.regDraft?.acceptedWarnings)return toast('Bitte bestätige die Hinweise.');
       const c=await createUserWithEmailAndPassword(auth,email,pw);
-      await DB.set('users',c.user.uid,{email,name,klass:klass||'Klasse 8',role:'Schüler',createdAt:Date.now()});
+      await DB.set('users',c.user.uid,{email,name,klass:klass||'Klasse 8',role:'Schüler',createdAt:Date.now(),recoveryEmail:String(S.regDraft?.recoveryEmail||'').trim(),recoveryEmailVerified:false});
+      S.regDraft={};S.regStep=1;
     }else{
       await signInWithEmailAndPassword(auth,email,pw);
     }
