@@ -67,7 +67,7 @@ const DB={
 
 const S={
   settings:{
-    tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,profileExtras:true,feedback:true,personalization:true,mediaLibrary:true,mediaFavorites:true,mediaProgress:true,mediaNewBadge:true,mediaRelated:true,
+    buttonGuideImage:'',tickets:true,apps:true,allowReg:true,artFeedback:true,board:true,surveys:true,profileExtras:true,feedback:true,personalization:true,mediaLibrary:true,mediaFavorites:true,mediaProgress:true,mediaNewBadge:true,mediaRelated:true,
     activityOverview:true,privateMessages:true,helpCenter:true,privateMessagingPolicy:'all',
     slashCommandsEnabled:true,passwordSupport:true,
     slashCommands:[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}],
@@ -341,6 +341,7 @@ const nav=()=>{
         ${isStaff()?`<button class="ib ${on('admin')}" title="Admin" aria-label="Admin" onclick="S.view='admin';render()">${ic('shield')}</button>`:''}
         ${S.settings.personalization?`<button class="ib" title="Hell/Dunkel" onclick="toggleTheme()">${ic(dark?'sun':'moon')}</button>`:''}
         ${S.user?`<button class="ib ${on('profile')}" title="Mein Profil" aria-label="Mein Profil" onclick="S.view='profile';render()">${ic('account')}</button>`:`<button class="ib" title="Anmelden" aria-label="Anmelden" onclick="openAuth('login')">${ic('account')}</button>`}
+        <button class="ib" title="Erklärung aller Schaltflächen" aria-label="Erklärung aller Schaltflächen" onclick="openButtonGuide()"><i data-lucide="circle-help" class="w-5 h-5"></i></button>
       </div>
       <label class="search-pill-outer cursor-text" aria-label="Suchen"><span class="search-pill-inner"><svg class="shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.4"></circle><path d="m15.5 15.5 5 5"></path></svg><input id="s-q" class="bg-transparent outline-none w-24 sm:w-44 focus:w-32 sm:focus:w-52 text-white placeholder-white/70 text-base sm:text-lg transition-all" placeholder=" " aria-label="Suchen" value="${esc(S.q)}" oninput="doSearch(this.value)"></span></label>
     </div></div></header>`;
