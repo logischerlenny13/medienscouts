@@ -8,11 +8,11 @@
 <script src="https://unpkg.com/lucide@0.383.0"></script>
 <style type="text/tailwindcss">
 .glass{@apply bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-sm}
-.inp{@apply w-full rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 ring-blue-600 text-sm transition}
-.btn{@apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition disabled:opacity-50 cursor-pointer shadow-sm}
-.btn2{@apply inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200/70 dark:bg-slate-800 hover:bg-slate-300/70 dark:hover:bg-slate-700 text-xs font-medium transition cursor-pointer}
-.tab{@apply px-3.5 py-2 rounded-xl text-sm font-medium hover:bg-blue-500/10 transition cursor-pointer}
-.tab.on{@apply bg-blue-600 text-white shadow-sm}
+.inp{@apply w-full rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800/90 border border-slate-300 dark:border-slate-700 outline-none focus:ring-2 ring-[#0a84ff] text-sm transition}
+.btn{@apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#0a84ff] hover:bg-[#1b8eff] text-white text-sm font-semibold transition disabled:opacity-50 cursor-pointer shadow-sm}
+.btn2{@apply inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-200/75 dark:bg-white/10 hover:bg-slate-300/80 dark:hover:bg-white/20 border border-slate-300/60 dark:border-white/15 text-xs font-medium transition cursor-pointer}
+.tab{@apply px-3.5 py-2 rounded-xl text-sm font-medium hover:bg-white/10 transition cursor-pointer}
+.tab.on{@apply bg-[#0a84ff] text-white shadow-sm}
 .prose p{margin:.85rem 0;line-height:1.75;font-size:1.02rem}.prose h3{font-weight:700;font-size:1.3rem;margin-top:1.6rem;margin-bottom:.5rem}.prose ul{list-style:disc;padding-left:1.5rem;margin:.8rem 0;line-height:1.7}
 </style>
 </head>
@@ -20,9 +20,9 @@
 <div id="bg-overlay" class="min-h-screen flex flex-col">
   <div id="app" class="flex-1 flex flex-col"></div>
 </div>
-<div id="modal"></div>
 <div id="auth-fullscreen"></div>
 <div id="chat-fullscreen"></div>
+<div id="modal"></div>
 <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[100000] pointer-events-none"></div>
 
 <script type="module">
@@ -62,7 +62,7 @@ const DB={
   passwordGet:async id=>{const s=await getDoc(doc(db,'ticketPasswords',id));return s.exists()?{id:s.id,...s.data()}:null},
   passwordSet:(id,d)=>setDoc(doc(db,'ticketPasswords',id),d),
   passwordDel:id=>deleteDoc(doc(db,'ticketPasswords',id)),
-  msgs:(id,cb,onErr)=>onSnapshot(query(collection(db,'tickets',id,'messages'),orderBy('ts')),s=>cb(s.docs.map(d=>({id:d.id,...d.data()}))),err=>{console.error('Chat-Abo Fehler:',err);if(onErr)onErr(err)}),
+  msgs:(id,cb,onErr,asAdmin=false)=>onSnapshot(asAdmin?collection(db,'tickets',id,'messages'):query(collection(db,'tickets',id,'messages'),where('internal','==',false)),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.ts||0)-(b.ts||0))),err=>{console.error('Chat-Abo Fehler:',err);if(onErr)onErr(err)}),
   addMsg:(id,m)=>addDoc(collection(db,'tickets',id,'messages'),m),
   surveyResp:(sid,cb)=>onSnapshot(collection(db,'surveys',sid,'responses'),s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))),
   addSurveyResp:(sid,d)=>addDoc(collection(db,'surveys',sid,'responses'),d)
@@ -94,11 +94,13 @@ const S={
   user:null,view:'home',activeArtId:null,activeVideoId:null,libraryType:'',activeSurveyId:null,surveyStepClass:'',
   adminTab:'settings',authMode:'login',regStep:1,regDir:'fade',regShowPw:false,authMsg:'',regDraft:{email:'',name:'',klass:'Klasse 8',pw:'',pw2:'',acks:{},backupEmail:''},q:'',cat:'Alle',edit:null,open:null,pageViews:0,
   chatNoteMode:false,surveyBuilderQs:[],svDraft:null,surveyResults:[],activeResultSurvey:null,unsubs:[],unsubSurveyResp:null,
-  decryptedChatPw:{},revealedChatPw:{},openingChatId:null,creatingPwTicket:false,prefillTicketSubj:'',searchDropOpen:false
+  decryptedChatPw:{},revealedChatPw:{},openingChatId:null,creatingPwTicket:false,sendingMsg:false,submittingSlash:false,prefillTicketSubj:'',searchDropOpen:false
 };
 let lastCountedView=null,lastAnimatedView='';
 
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safeImgSrc=u=>{const s=String(u||'').trim();if(!s)return'';if(/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(s))return s.replace(/\s+/g,'');if(/^https:\/\/[^\s"'<>()]+$/i.test(s))return s;return'';};
+const safeYtId=id=>{const s=String(id||'').trim();return /^[\w-]{11}$/.test(s)?s:'';};
 const toast=t=>{const el=$('#toast');if(!el)return;el.innerHTML=`<div class="lg-toast px-4 py-2.5 text-sm font-medium shadow-2xl">${esc(t)}</div>`;clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>{if($('#toast'))$('#toast').innerHTML=''},3400)};
 const icons=()=>lucide.createIcons();
 const val=id=>$('#'+id)?.value.trim()||'';
@@ -184,13 +186,13 @@ const claimedTickets=()=>S.tickets.filter(t=>t.status!=='Gelöst'&&t.assignedUid
 onSnapshot(doc(db,'settings','main'),s=>{
   S.needSetup=!s.exists()||!s.data().setupDone;
   if(s.exists())S.settings={...S.settings,...s.data()};
-  applyDesign();render();
-},()=>render());
+  applyDesign();liveRender();
+},()=>liveRender());
 
-DB.watch('videos',d=>{S.videos=d;render()},'createdAt');
-DB.watch('articles',d=>{S.articles=d;render()},'createdAt');
-DB.watch('board',d=>{S.boardItems=d;render()},'createdAt');
-DB.watch('surveys',d=>{S.surveys=d;render()},'createdAt');
+DB.watch('videos',d=>{S.videos=d;liveRender()},'createdAt');
+DB.watch('articles',d=>{S.articles=d;liveRender()},'createdAt');
+DB.watch('board',d=>{S.boardItems=d;liveRender()},'createdAt');
+DB.watch('surveys',d=>{S.surveys=d;liveRender()},'createdAt');
 
 onAuthStateChanged(auth,async u=>{
   S.unsubs.forEach(f=>f());S.unsubs=[];
@@ -218,19 +220,19 @@ onAuthStateChanged(auth,async u=>{
   if(S.open=='login')closeModal();
   if(S.pendingView){S.view=S.pendingView;S.pendingView=null;}
 
-  S.unsubs.push(DB.watchMy('tickets',u.uid,d=>{S.myTickets=d;render()}));
-  S.unsubs.push(DB.watchMy('applications',u.uid,d=>{S.myApps=d;render()}));
+  S.unsubs.push(DB.watchMy('tickets',u.uid,d=>{S.myTickets=d;liveRender()}));
+  S.unsubs.push(DB.watchMy('applications',u.uid,d=>{S.myApps=d;liveRender()}));
 
-  S.unsubs.push(DB.watchPrivate(u.uid,d=>{S.privateMessages=d;render()}));
-  S.unsubs.push(DB.watch('publicUsers',d=>{S.pubUsers=d;render()}));
+  S.unsubs.push(DB.watchPrivate(u.uid,d=>{S.privateMessages=d;liveRender()}));
+  S.unsubs.push(DB.watch('publicUsers',d=>{S.pubUsers=d;liveRender()}));
   DB.set('publicUsers',u.uid,{name:S.user.name,role:S.user.role||'Schüler',klass:S.user.klass||''}).catch(()=>{});
-  S.unsubs.push(DB.watch('helpArticles',d=>{S.helpArticles=d;render()},'createdAt'));
+  S.unsubs.push(DB.watch('helpArticles',d=>{S.helpArticles=d;liveRender()},'createdAt'));
 
   if(['Admin','Medienscout'].includes(p.role)){
-    const w=(c,k,o)=>S.unsubs.push(DB.watch(c,d=>{S[k]=d;render()},o));
+    const w=(c,k,o)=>S.unsubs.push(DB.watch(c,d=>{S[k]=d;liveRender()},o));
     if(p.role==='Admin')w('tickets','tickets','updatedAt');
-    else S.unsubs.push(DB.watchScoutTickets(u.uid,d=>{S.tickets=d;render()}));
-    if(p.role==='Admin')S.unsubs.push(DB.watch('pageViews',d=>{S.pageViews=d.length;if(S.view==='admin'&&S.adminTab==='settings')render()}));
+    else S.unsubs.push(DB.watchScoutTickets(u.uid,d=>{S.tickets=d;liveRender()}));
+    if(p.role==='Admin')S.unsubs.push(DB.watch('pageViews',d=>{S.pageViews=d.length;if(S.view==='admin'&&S.adminTab==='settings')liveRender()}));
     w('applications','apps','createdAt');
     w('users','users');
     w('feedback','feedbackItems','createdAt');
@@ -240,25 +242,27 @@ onAuthStateChanged(auth,async u=>{
 });
 
 function applyDesign(){
-  document.body.style.backgroundImage=S.settings.bg?`url(${S.settings.bg})`:'';
-  $('#bg-overlay').className=S.settings.bg?'min-h-screen flex flex-col bg-slate-100/85 dark:bg-slate-950/85 backdrop-blur-sm':'min-h-screen flex flex-col';
+  const bgUrl=safeImgSrc(S.settings.bg);
+  document.body.style.backgroundImage=bgUrl?`url("${bgUrl}")`:'';
+  $('#bg-overlay').className=bgUrl?'min-h-screen flex flex-col bg-slate-100/85 dark:bg-slate-950/85 backdrop-blur-sm':'min-h-screen flex flex-col';
 }
 
-// ---------- Haupt-Rendering (klick-sicher & ohne Fokus-Verlust beim Tippen) ----------
+// ---------- Haupt-Rendering (klick-sicher: Nutzerklicks rendern sofort, Live-Updates warten sauber) ----------
 let pointerActive=false,pointerTimer=null,pendingRender=false,pendingRenderAfterBlur=false;
-const releasePointer=()=>{pointerActive=false;clearTimeout(pointerTimer);if(pendingRender){pendingRender=false;setTimeout(()=>render(),20)}};
+const overlayOpen=()=>!!($('#app-modal-layer')||$('#auth-fullscreen')?.firstElementChild||$('#chat-fullscreen')?.firstElementChild);
+const releasePointer=()=>{pointerActive=false;clearTimeout(pointerTimer);if(pendingRender){pendingRender=false;setTimeout(()=>{if(!pointerActive&&!overlayOpen())liveRender();},160);}};
 document.addEventListener('pointerdown',e=>{
-  if(e.target.closest('#app button,#app [onclick],#app a')){
-    pointerActive=true;clearTimeout(pointerTimer);pointerTimer=setTimeout(releasePointer,650);
+  if(e.target.closest('#app button,#app [onclick],#app a,#app label')){
+    pointerActive=true;clearTimeout(pointerTimer);pointerTimer=setTimeout(releasePointer,900);
   }
 },true);
-document.addEventListener('pointerup',()=>setTimeout(releasePointer,30),true);
+document.addEventListener('pointerup',()=>{if(pointerActive){clearTimeout(pointerTimer);pointerTimer=setTimeout(releasePointer,180);}},true);
 document.addEventListener('pointercancel',releasePointer,true);
 document.addEventListener('focusout',()=>{
   if(pendingRenderAfterBlur){
     pendingRenderAfterBlur=false;
-    if(pointerActive){pendingRender=true;}
-    else{setTimeout(()=>{if(!pointerActive)render();else pendingRender=true;},120);}
+    if(pointerActive||overlayOpen()){pendingRender=true;}
+    else{setTimeout(()=>{if(!pointerActive&&!overlayOpen())liveRender();else pendingRender=true;},180);}
   }
 });
 
@@ -286,8 +290,12 @@ function renderMainOnly(){
     }
   }catch(err){console.error('Anzeigefehler:',err);toast('Anzeigefehler: '+(err.message||err))}
 }
-function render(force=false){
-  if(!force&&pointerActive){pendingRender=true;return;}
+function liveRender(){
+  if(pointerActive||overlayOpen()){pendingRender=true;return;}
+  try{renderInner(false)}catch(err){console.error('Anzeigefehler:',err);toast('Anzeigefehler: '+(err.message||err))}
+}
+function render(force=true){
+  pointerActive=false;clearTimeout(pointerTimer);
   try{renderInner(force)}catch(err){console.error('Anzeigefehler:',err);toast('Anzeigefehler: '+(err.message||err))}
 }
 function renderInner(force=false){
@@ -426,19 +434,19 @@ html:not(.dark) #app-modal-layer .btn2{background:rgba(15,23,42,.08);border-colo
 .anim-msg-in{animation:ms-msg-in .24s cubic-bezier(.22,1,.36,1) both}
 .ms-shimmer{position:relative;overflow:hidden}
 .ms-shimmer::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);transform:translateX(-100%);animation:ms-shimmer 1.25s ease-in-out infinite}
-@keyframes ms-view-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-@keyframes ms-stagger-in{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes ms-view-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes ms-stagger-in{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
 @keyframes ms-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes ms-fade-out{from{opacity:1}to{opacity:0}}
-@keyframes ms-modal-pop{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes ms-modal-out{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(10px) scale(.96)}}
-@keyframes ms-step-fwd{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
-@keyframes ms-step-back{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:translateX(0)}}
-@keyframes ms-check-pop{from{transform:scale(.6)}to{transform:scale(1)}}
-@keyframes ms-chat-in{from{opacity:0;transform:translateY(22px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes ms-msg-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes ms-drop-in{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes ms-toast-in{from{opacity:0;transform:translateY(16px) scale(.92)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes ms-modal-pop{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:none}}
+@keyframes ms-modal-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(10px) scale(.96)}}
+@keyframes ms-step-fwd{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+@keyframes ms-step-back{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}
+@keyframes ms-check-pop{from{transform:scale(.6)}to{transform:none}}
+@keyframes ms-chat-in{from{opacity:0;transform:translateY(22px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes ms-msg-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes ms-drop-in{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes ms-toast-in{from{opacity:0;transform:translateY(16px) scale(.92)}to{opacity:1;transform:none}}
 @keyframes ms-shimmer{to{transform:translateX(100%)}}
 @keyframes ms-pulse-dot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.22);opacity:.78}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
@@ -552,7 +560,8 @@ const nav=()=>{
   const v=S.view,on=(...a)=>a.includes(v)?'on':'',dark=document.documentElement.classList.contains('dark');
   const b=(ico,view,title,extra='')=>`<button class="ib ${on(view)}" title="${title}" aria-label="${title}" onclick="${extra||`S.view='${view}';S.q='';S.cat='Alle';closeSearchDropdown();render()`}">${ic(ico)}</button>`;
   const prot=(ico,view,title,flag)=>flag?`<button class="ib ${on(view)}" title="${title}" aria-label="${title}" onclick="closeSearchDropdown();goProtected('${view}')">${ic(ico)}${view==='tickets'&&S.myTickets.some(t=>t.unreadStudent)?'<span class="dot"></span>':''}</button>`:'';
-  const logo=S.settings.logo?`<img src="${S.settings.logo}" style="width:2.4rem;height:2.4rem;object-fit:contain;border-radius:.5rem" alt="Home">`:`<img src="${IC.logo}" style="width:2.4rem;height:2.4rem" alt="Home">`;
+  const safeLogo=safeImgSrc(S.settings.logo);
+  const logo=safeLogo?`<img src="${esc(safeLogo)}" style="width:2.4rem;height:2.4rem;object-fit:contain;border-radius:.5rem" alt="Home">`:`<img src="${IC.logo}" style="width:2.4rem;height:2.4rem" alt="Home">`;
   return `<header class="sticky top-0 z-40 px-3 pt-3 pb-1"><div class="flex items-center justify-between gap-2">
     <div class="tile"><button class="ib !bg-transparent" title="Startseite" aria-label="Startseite" onclick="S.view='home';S.q='';S.cat='Alle';closeSearchDropdown();render()">${logo}</button></div>
     <div class="tile overflow-x-auto max-w-[60vw]">
@@ -575,10 +584,10 @@ function mediaCard(kind,x,idx=0){
   const fav=mediaIsFavorite(kind,x.id),fresh=S.settings.mediaNewBadge!==false&&isFreshMedia(x),seen=mediaIsSeen(kind,x.id);
   const top=`${x.pinned?`<span class="absolute top-4 left-4">${ic('pin','w-6 h-6')}</span>`:''}
     ${S.settings.mediaFavorites!==false?`<button class="absolute top-3 right-3 opacity-80 hover:opacity-100 hover:scale-110 transition text-xl cursor-pointer" onclick="updateMediaState('${kind}','${x.id}','favorites')" title="Merken">${fav?'★':'☆'}</button>`:''}`;
-  if(kind==='videos')return `<article class="card2 anim-stagger space-y-3" style="--stagger:${idx}">${top}
+  if(kind==='videos'){const vid=safeYtId(x.vid);return `<article class="card2 anim-stagger space-y-3" style="--stagger:${idx}">${top}
     <h3 class="text-2xl font-bold px-8">${esc(x.title)}${fresh?' <span class="text-xs align-middle text-emerald-300 font-semibold">· NEU</span>':''}</h3>
-    <button class="relative block w-full aspect-video rounded-xl overflow-hidden bg-black cursor-pointer" onclick="openVideo('${x.id}')"><img src="https://img.youtube.com/vi/${encodeURIComponent(x.vid)}/hqdefault.jpg" loading="lazy" class="yt-thumb w-full h-full object-cover" alt=""><span class="playbtn">${ic('play')}</span></button>
-    ${S.settings.mediaProgress!==false?`<div class="text-xs opacity-60">${seen?'Angesehen':'Noch nicht angesehen'}</div>`:''}</article>`;
+    <button class="relative block w-full aspect-video rounded-xl overflow-hidden bg-black cursor-pointer" onclick="openVideo('${x.id}')">${vid?`<img src="https://img.youtube.com/vi/${vid}/hqdefault.jpg" loading="lazy" class="yt-thumb w-full h-full object-cover" alt="">`:''}<span class="playbtn">${ic('play')}</span></button>
+    ${S.settings.mediaProgress!==false?`<div class="text-xs opacity-60">${seen?'Angesehen':'Noch nicht angesehen'}</div>`:''}</article>`;}
   const txt=String(x.body||'').replace(/^## /gm,'').replace(/^[-*] /gm,'').replace(/\s+/g,' ').slice(0,170);
   return `<article class="card2 anim-stagger flex flex-col gap-3" style="--stagger:${idx}">${top}
     <h3 class="text-2xl font-bold px-8">${esc(x.title)}${fresh?' <span class="text-xs align-middle text-emerald-300 font-semibold">· NEU</span>':''}</h3>
@@ -605,51 +614,53 @@ function homeView(){
   const platSummary=passwordPlatforms().slice(0,4).join(' · ');
   const showBoth=S.settings.passwordSupport&&S.settings.tickets;
   return `<div class="space-y-4 max-w-[1800px] mx-auto">
-    ${!searching&&(S.settings.passwordSupport||S.settings.tickets)?`<section class="grid grid-cols-1 ${showBoth?'md:grid-cols-2':''} gap-4 items-stretch">
-      ${S.settings.passwordSupport?`<div role="button" tabindex="0" onclick="goProtected('pwreset')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goProtected('pwreset')}" class="support-card anim-stagger flex flex-col justify-between gap-4 cursor-pointer text-left" style="--stagger:0">
-        <div class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="space-y-1">
-              <div class="text-xs text-white/60 font-medium">Ende-zu-Ende-verschlüsselt · ${esc(platSummary)}</div>
-              <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-white">${esc(pwTitle)}</h2>
+    ${!searching&&(S.settings.passwordSupport||S.settings.tickets||hintsText)?`<section class="panel anim-stagger space-y-4" style="--stagger:0">
+      ${(S.settings.passwordSupport||S.settings.tickets)?`<div class="grid grid-cols-1 ${showBoth?'md:grid-cols-2':''} gap-4 items-stretch">
+        ${S.settings.passwordSupport?`<div role="button" tabindex="0" onclick="goProtected('pwreset')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goProtected('pwreset')}" class="support-card anim-stagger flex flex-col justify-between gap-4 cursor-pointer text-left" style="--stagger:0">
+          <div class="space-y-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="space-y-1">
+                <div class="text-xs text-white/60 font-medium">Ende-zu-Ende-verschlüsselt · ${esc(platSummary)}</div>
+                <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-white">${esc(pwTitle)}</h2>
+              </div>
+              ${ic('key','sc-icon w-11 h-11 shrink-0 drop-shadow-md')}
             </div>
-            ${ic('key','sc-icon w-11 h-11 shrink-0 drop-shadow-md')}
+            <p class="text-sm sm:text-[15px] text-white/80 leading-relaxed">${esc(pwText)}</p>
           </div>
-          <p class="text-sm sm:text-[15px] text-white/80 leading-relaxed">${esc(pwText)}</p>
-        </div>
-        <div class="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
-          <span class="text-xs text-white/55">Sicher mit deinem Medienscouts-Passwort</span>
-          <span class="lg-cta !py-2 !px-4 !text-sm whitespace-nowrap shrink-0">Passwort zurücksetzen <span class="sc-arrow inline-block">→</span></span>
-        </div>
+          <div class="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+            <span class="text-xs text-white/55">Sicher mit deinem Medienscouts-Passwort</span>
+            <span class="lg-cta !py-2 !px-4 !text-sm whitespace-nowrap shrink-0">Passwort zurücksetzen <span class="sc-arrow inline-block">→</span></span>
+          </div>
+        </div>`:''}
+        ${S.settings.tickets?`<div role="button" tabindex="0" onclick="goProtected('tickets')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goProtected('tickets')}" class="support-card anim-stagger flex flex-col justify-between gap-4 cursor-pointer text-left" style="--stagger:1">
+          <div class="space-y-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="space-y-1">
+                <div class="text-xs text-white/60 font-medium">Persönlicher Support-Chat${unreadCnt?` · <span class="text-emerald-300 font-semibold">${unreadCnt} neue Antwort${unreadCnt>1?'en':''}</span>`:' · Schnelle Hilfe von Schülern für Schüler'}</div>
+                <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-white">${esc(tkTitle)}</h2>
+              </div>
+              ${ic('ticket','sc-icon w-11 h-11 shrink-0 drop-shadow-md')}
+            </div>
+            <p class="text-sm sm:text-[15px] text-white/80 leading-relaxed">${esc(tkText)}</p>
+          </div>
+          <div class="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
+            <span class="text-xs text-white/55">Inkl. Ersthilfe-Vorschlägen beim Schreiben</span>
+            <span class="lg-cta !py-2 !px-4 !text-sm whitespace-nowrap shrink-0">Ticket öffnen <span class="sc-arrow inline-block">→</span></span>
+          </div>
+        </div>`:''}
       </div>`:''}
-      ${S.settings.tickets?`<div role="button" tabindex="0" onclick="goProtected('tickets')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goProtected('tickets')}" class="support-card anim-stagger flex flex-col justify-between gap-4 cursor-pointer text-left" style="--stagger:1">
-        <div class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="space-y-1">
-              <div class="text-xs text-white/60 font-medium">Persönlicher Support-Chat${unreadCnt?` · <span class="text-emerald-300 font-semibold">${unreadCnt} neue Antwort${unreadCnt>1?'en':''}</span>`:' · Schnelle Hilfe von Schülern für Schüler'}</div>
-              <h2 class="text-xl sm:text-2xl font-bold tracking-tight text-white">${esc(tkTitle)}</h2>
-            </div>
-            ${ic('ticket','sc-icon w-11 h-11 shrink-0 drop-shadow-md')}
-          </div>
-          <p class="text-sm sm:text-[15px] text-white/80 leading-relaxed">${esc(tkText)}</p>
-        </div>
-        <div class="flex items-center justify-between gap-3 pt-2 border-t border-white/10">
-          <span class="text-xs text-white/55">Inkl. Ersthilfe-Vorschlägen beim Schreiben</span>
-          <span class="lg-ghost !py-2 !px-4 !text-sm !bg-white/15 hover:!bg-white/25 whitespace-nowrap shrink-0">Ticket öffnen <span class="sc-arrow inline-block">→</span></span>
+      ${hintsText?`<div class="support-card anim-stagger !py-4 !px-5 flex items-start gap-3.5" style="--stagger:2">
+        ${ic('shield','w-8 h-8 shrink-0 mt-0.5')}
+        <div class="space-y-1 min-w-0">
+          <h2 class="font-bold text-base text-white">${esc(hintsTitle)}</h2>
+          <p class="text-sm text-white/80 whitespace-pre-wrap leading-relaxed">${esc(hintsText)}</p>
         </div>
       </div>`:''}
     </section>`:''}
-    ${!searching&&hintsText?`<section class="support-card anim-stagger !py-4 !px-5 flex items-start gap-3.5" style="--stagger:2">
-      ${ic('shield','w-8 h-8 shrink-0 mt-0.5')}
-      <div class="space-y-1 min-w-0">
-        <h2 class="font-bold text-base text-white">${esc(hintsTitle)}</h2>
-        <p class="text-sm text-white/80 whitespace-pre-wrap leading-relaxed">${esc(hintsText)}</p>
-      </div>
-    </section>`:''}
-    ${S.settings.board&&S.boardItems.length&&!searching?`<section class="panel anim-stagger" style="--stagger:2"><h2 class="ptitle !cursor-default">Aktuelles</h2><div class="grid md:grid-cols-2 gap-4">${S.boardItems.slice(0,4).map((b,i)=>`<div class="card2 anim-stagger" style="--stagger:${i}"><div class="text-xs opacity-60">${esc(b.type)} · ${fmt(b.createdAt)}</div><b class="text-lg">${esc(b.title)}</b><p class="opacity-80 mt-1">${esc(b.text)}</p>${b.img?`<img src="${b.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 mx-auto cursor-zoom-in" alt="">`:''}</div>`).join('')}</div></section>`:''}
+    ${S.settings.board&&S.boardItems.length&&!searching?`<section class="panel anim-stagger" style="--stagger:2"><h2 class="ptitle !cursor-default">Aktuelles</h2><div class="grid md:grid-cols-2 gap-4">${S.boardItems.slice(0,4).map((b,i)=>{const bi=safeImgSrc(b.img);return `<div class="card2 anim-stagger" style="--stagger:${i}"><div class="text-xs opacity-60">${esc(b.type)} · ${fmt(b.createdAt)}</div><b class="text-lg">${esc(b.title)}</b><p class="opacity-80 mt-1">${esc(b.text)}</p>${bi?`<img src="${esc(bi)}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 mx-auto cursor-zoom-in" alt="">`:''}</div>`;}).join('')}</div></section>`:''}
     ${mediaEnabled?`<section class="panel anim-stagger" style="--stagger:3">${head('Anleitungen','articles')}<div class="grid md:grid-cols-2 gap-4">${arts.map((a,i)=>mediaCard('articles',a,i)).join('')||empty(searching?'Keine passenden Anleitungen gefunden.':'Noch keine angepinnten Anleitungen.')}</div></section>
     <section class="panel anim-stagger" style="--stagger:4">${head('Erklärvideos','videos')}<div class="grid md:grid-cols-2 gap-4">${vids.map((v,i)=>mediaCard('videos',v,i)).join('')||empty(searching?'Keine passenden Videos gefunden.':'Noch keine angepinnten Videos.')}</div></section>`:''}
-    ${!searching&&S.settings.surveys!==false?`<section class="panel anim-stagger" style="--stagger:5">${surveysView()}</section>`:''}
+    ${!searching&&S.settings.surveys!==false?`<section class="panel anim-stagger" style="--stagger:5">${surveysView(true)}</section>`:''}
     ${more&&!searching?`<section class="panel anim-stagger flex flex-wrap justify-center gap-3" style="--stagger:6">${more}</section>`:''}
   </div>`;
 }
@@ -690,14 +701,15 @@ window.markMediaSeen=async(kind,id)=>{
 };
 window.openVideo=id=>{
   const v=S.videos.find(x=>x.id===id);if(!v)return toast('Video nicht gefunden.');
+  const vid=safeYtId(v.vid);if(!vid)return toast('Ungültige Video-ID.');
   S.activeVideoId=id;markMediaSeen('videos',id);
   const related=S.videos.filter(x=>x.id!==id&&x.published!==false&&x.cat===v.cat).slice(0,3);
   modal(`<div class="space-y-4">
     <div class="flex items-center justify-between gap-3"><div class="flex items-center gap-2.5">${ic('video','w-7 h-7')}<span class="text-xs font-semibold uppercase tracking-wide opacity-80">Video ansehen</span></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div>
-    <div class="aspect-video bg-black rounded-2xl overflow-hidden border border-white/15"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${esc(v.vid)}?autoplay=1&rel=0" title="${esc(v.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+    <div class="aspect-video bg-black rounded-2xl overflow-hidden border border-white/15"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${vid}?autoplay=1&rel=0" title="${esc(v.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
     <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h2 class="text-xl font-bold">${esc(v.title)}</h2><div class="text-xs opacity-65 mt-1">${esc(v.cat||'Video')} · ${fmt(v.createdAt)}</div></div>${S.settings.mediaFavorites!==false?`<button type="button" class="btn2 shrink-0" onclick="updateMediaState('videos','${v.id}','favorites')" title="Merken"><i data-lucide="bookmark" class="w-4 h-4 ${mediaIsFavorite('videos',v.id)?'text-amber-400':''}"></i></button>`:''}</div>
     ${v.desc?'<div class="pt-3 border-t border-white/15"><h3 class="font-semibold text-sm mb-1">Beschreibung</h3><p class="text-sm opacity-80 whitespace-pre-wrap leading-relaxed">'+esc(v.desc)+'</p></div>':''}
-    <a class="btn2 w-full justify-center" href="https://www.youtube.com/watch?v=${encodeURIComponent(v.vid)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" class="w-4 h-4"></i>Auf YouTube öffnen</a>
+    <a class="btn2 w-full justify-center" href="https://www.youtube.com/watch?v=${vid}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" class="w-4 h-4"></i>Auf YouTube öffnen</a>
     ${S.settings.mediaRelated!==false&&related.length?'<div class="pt-3 border-t border-white/15 space-y-2"><h3 class="font-semibold text-sm">Weitere Videos zum Thema</h3>'+related.map(x=>`<button type="button" class="block w-full text-left p-2.5 rounded-xl hover:bg-white/10 text-sm transition" onclick="openVideo('${x.id}')">${esc(x.title)}</button>`).join('')+'</div>':''}
   </div>`);
   const panel=$('#modal .max-w-xl');if(panel)panel.classList.replace('max-w-xl','max-w-4xl');
@@ -708,12 +720,12 @@ window.openArtPage=id=>{S.activeArtId=id;S.view='article';markMediaSeen('article
 
 function articlePageView(){
   const a=S.articles.find(x=>x.id==S.activeArtId);
-  if(!a)return `<div class="glass p-8 text-center"><p>Artikel nicht gefunden.</p><button class="btn mt-4" onclick="S.view='home';render()">Zurück zur Übersicht</button></div>`;
+  if(!a)return `<div class="max-w-[1800px] mx-auto"><section class="panel max-w-3xl mx-auto text-center space-y-4 py-8"><p>Artikel nicht gefunden.</p><button class="btn" onclick="S.view='home';render()">Zurück zur Übersicht</button></section></div>`;
   const words=String(a.body||'').split(/\s+/).length;
   const readMin=Math.max(1,Math.round(words/160));
   const related=S.articles.filter(x=>x.id!=a.id&&x.published!==false&&x.cat==a.cat).slice(0,2);
 
-  return `<div class="max-w-3xl mx-auto space-y-6">
+  return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="max-w-3xl mx-auto space-y-6">
     <button class="btn2" onclick="S.view='articles';render()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Zurück zu allen Anleitungen</button>
 
     <article class="glass p-6 sm:p-10 space-y-6">
@@ -749,7 +761,7 @@ function articlePageView(){
         </button>`).join('')}
       </div>
     </div>`:''}
-  </div>`;
+  </div></section></div>`;
 }
 
 window.voteArt=async(id,up)=>{
@@ -769,23 +781,24 @@ window.voteArt=async(id,up)=>{
 };
 
 // ---------- Umfragen-Ansicht für Schüler ----------
-function surveysView(){
+function surveysView(embedded=false){
+  const wrap=inner=>embedded?inner:`<div class="max-w-[1800px] mx-auto"><section class="panel">${inner}</section></div>`;
   const activeList=S.surveys.filter(s=>s.active!==false);
   if(S.activeSurveyId){
     const sv=activeList.find(x=>x.id==S.activeSurveyId);
-    if(!sv){S.activeSurveyId=null;return surveysView()}
+    if(!sv){S.activeSurveyId=null;return surveysView(embedded)}
     if(!sv.anonymous&&!S.user){
-      return `<div class="glass p-8 max-w-lg mx-auto text-center space-y-4">
+      return wrap(`<div class="glass p-8 max-w-lg mx-auto text-center space-y-4">
         <i data-lucide="lock" class="w-8 h-8 text-blue-500 mx-auto"></i>
         <h2 class="text-xl font-bold">Anmeldung erforderlich</h2>
         <p class="text-sm opacity-75">Diese Umfrage ist nicht anonym. Bitte melde dich kurz mit deinem Schul-Account an.</p>
         <button class="btn" onclick="openAuth('login')">Jetzt anmelden</button>
-      </div>`;
+      </div>`);
     }
     const selClass=S.surveyStepClass||(S.user?.klass||'Klasse 5');
     const visibleQs=(sv.questions||[]).filter(q=>!q.targetClass||q.targetClass=='Alle'||q.targetClass==selClass);
 
-    return `<div class="max-w-2xl mx-auto space-y-6">
+    return wrap(`<div class="max-w-2xl mx-auto space-y-6">
       <button class="btn2" onclick="S.activeSurveyId=null;render()"><i data-lucide="arrow-left" class="w-4 h-4"></i>Zurück zu allen Umfragen</button>
       <div class="glass p-6 sm:p-8 space-y-5">
         <div>
@@ -816,10 +829,10 @@ function surveysView(){
 
         <button class="btn w-full" onclick="submitSurvey('${sv.id}')"><i data-lucide="send" class="w-4 h-4"></i>Antworten absenden</button>
       </div>
-    </div>`;
+    </div>`);
   }
 
-  return `<div class="space-y-6">
+  return wrap(`<div class="space-y-6">
     <div>
       <h1 class="text-2xl font-bold">Schul-Umfragen & Feedback</h1>
       <p class="text-sm opacity-75">Mach mit bei aktuellen Umfragen der Medienscouts.</p>
@@ -834,7 +847,7 @@ function surveysView(){
         <button class="btn w-fit" onclick="S.activeSurveyId='${s.id}';S.surveyStepClass=S.user?.klass||'Klasse 8';render()"><i data-lucide="arrow-right" class="w-4 h-4"></i>Jetzt teilnehmen</button>
       </div>`).join('')||`<div class="glass p-8 text-center opacity-60 md:col-span-2">Aktuell sind keine Umfragen aktiv.</div>`}
     </div>
-  </div>`;
+  </div>`);
 }
 
 window.submitSurvey=async sid=>{
@@ -889,8 +902,8 @@ window.updateTicketErsthilfe=()=>{
 };
 
 function studentTicketsView(){
-  if(!S.settings.tickets)return `<div class="glass p-6 text-amber-500">Das Ticket-System ist momentan deaktiviert.</div>`;
-  return `<div class="space-y-6 max-w-5xl mx-auto">
+  if(!S.settings.tickets)return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="glass p-6 text-amber-400">Das Ticket-System ist momentan deaktiviert.</div></section></div>`;
+  return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="space-y-6 max-w-5xl mx-auto">
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold">Meine Support-Tickets & Nachrichten</h1>
@@ -900,7 +913,7 @@ function studentTicketsView(){
 
     <div class="grid lg:grid-cols-5 gap-6">
       <div class="glass p-5 space-y-3 lg:col-span-2 h-fit anim-stagger" style="--stagger:0">
-        <h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-blue-500"></i>Neues Ticket starten</h2>
+        <h2 class="font-bold text-base flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-[#0a84ff]"></i>Neues Ticket starten</h2>
         <div>
           <label class="text-xs opacity-70 block mb-1">Thema / Kategorie</label>
           <select id="t-cat" class="inp">${CATS.filter(c=>c!=='Passwort zurücksetzen').map(c=>`<option>${c}</option>`).join('')}</select>
@@ -926,7 +939,7 @@ function studentTicketsView(){
 
       <div class="space-y-3 lg:col-span-3">
         <h2 class="font-bold text-base">Meine Unterhaltungen (${S.myTickets.length})</h2>
-        ${S.myTickets.map((t,i)=>`<button type="button" onclick="openChat('${t.id}',false)" class="glass anim-stagger w-full p-4 text-left hover:border-blue-500/50 hover:-translate-y-0.5 transition flex items-center justify-between gap-3 cursor-pointer" style="--stagger:${i+1}">
+        ${S.myTickets.map((t,i)=>`<button type="button" onclick="openChat('${t.id}',false)" class="glass anim-stagger w-full p-4 text-left hover:border-[#0a84ff]/60 hover:-translate-y-0.5 transition flex items-center justify-between gap-3 cursor-pointer" style="--stagger:${i+1}">
           <div class="space-y-1 pointer-events-none">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold text-sm">${esc(t.subject||t.category)}</span>
@@ -934,27 +947,27 @@ function studentTicketsView(){
               ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-500 font-semibold">🔒 E2EE</span>':''}
               ${badge(t.status)}
               ${t.assignedName?`<span class="text-[11px] px-2 py-0.5 rounded bg-slate-500/15">Betreut von: ${esc(t.assignedName)}</span>`:''}
-              ${t.unreadStudent?`<span class="text-[11px] bg-blue-600 text-white px-2 py-0.5 rounded-full">Neue Nachricht</span>`:''}
+              ${t.unreadStudent?`<span class="text-[11px] bg-[#0a84ff] text-white px-2 py-0.5 rounded-full">Neue Nachricht</span>`:''}
             </div>
             <div class="text-xs opacity-60">${esc(t.category)} · Aktualisiert: ${fmt(t.updatedAt||t.createdAt)}</div>
           </div>
-          <span class="btn2 shrink-0 pointer-events-none"><i data-lucide="maximize-2" class="w-4 h-4 text-blue-500"></i>Vollbild-Chat</span>
+          <span class="btn !py-1.5 !px-3 !text-xs shrink-0 pointer-events-none"><i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>Öffnen</span>
         </button>`).join('') || `<div class="glass p-8 text-center opacity-60 text-sm">Du hast noch keine aktiven Tickets.</div>`}
       </div>
     </div>
-  </div>`;
+  </div></section></div>`;
 }
 
 // ---------- Passwort zurücksetzen (Schüler, Ende-zu-Ende-verschlüsselt mit Medienscouts-Passwort) ----------
 function pwResetView(){
-  if(!S.settings.passwordSupport)return `<div class="glass p-6 text-amber-500">Der Passwort-Support ist momentan deaktiviert.</div>`;
-  return `<div class="max-w-2xl mx-auto space-y-5">
+  if(!S.settings.passwordSupport)return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="glass p-6 text-amber-400">Der Passwort-Support ist momentan deaktiviert.</div></section></div>`;
+  return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="max-w-2xl mx-auto space-y-5">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h1 class="text-2xl font-bold">Passwort zurücksetzen</h1>
-      <span class="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">🔒 Ende-zu-Ende-verschlüsselt</span>
+      <span class="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">🔒 Ende-zu-Ende-verschlüsselt</span>
     </div>
     <div class="glass p-4 border border-emerald-500/30 text-sm space-y-1.5">
-      <div class="font-semibold text-emerald-500">So funktioniert die sichere Übertragung:</div>
+      <div class="font-semibold text-emerald-400">So funktioniert die sichere Übertragung:</div>
       <p class="text-xs opacity-80 leading-relaxed">Bestätige einmal dein <b>Medienscouts-Passwort</b> (das Passwort, mit dem du dich hier auf der Medienscouts-Webseite anmeldest). Damit erzeugt dein Browser einen geheimen Schlüssel – du musst dir keinen extra Code merken. Das neue Passwort wird beim Admin direkt verschlüsselt, liegt <b>niemals im Klartext in Firebase</b> und du entschlüsselst es im Chat einfach wieder mit deinem Medienscouts-Passwort.</p>
     </div>
     <div class="glass p-5 space-y-3">
@@ -966,9 +979,9 @@ function pwResetView(){
     </div>
     <div class="space-y-2">
       <div class="text-xs font-semibold uppercase tracking-wider opacity-80">3. App auswählen & verschlüsseltes Ticket senden</div>
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${passwordPlatforms().map(p=>`<button type="button" class="glass p-5 font-semibold hover:border-blue-500/50 transition cursor-pointer disabled:opacity-50" ${S.creatingPwTicket?'disabled':''} data-p="${esc(p)}" onclick="createPwTicket(this.dataset.p)">${esc(p)}</button>`).join('')}</div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${passwordPlatforms().map(p=>`<button type="button" class="glass p-5 font-semibold hover:border-[#0a84ff]/60 hover:-translate-y-0.5 transition cursor-pointer disabled:opacity-50" ${S.creatingPwTicket?'disabled':''} data-p="${esc(p)}" onclick="createPwTicket(this.dataset.p)">${esc(p)}</button>`).join('')}</div>
     </div>
-  </div>`;
+  </div></section></div>`;
 }
 window.createPwTicket=async p=>{
   if(!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
@@ -999,9 +1012,9 @@ window.createPwTicket=async p=>{
   finally{S.creatingPwTicket=false;render(true);}
 };
 
-function activityOverviewView(){const news=[...S.articles.map(a=>({title:a.title||'Artikel',detail:'Neuer Artikel',ts:a.createdAt})),...S.videos.map(v=>({title:v.title||'Video',detail:'Neues Video',ts:v.createdAt})),...S.boardItems.map(x=>({title:x.title||'Neuigkeit',detail:'Schwarzes Brett',ts:x.createdAt}))].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,40);return `<div class="space-y-5 max-w-5xl mx-auto"><h1 class="text-2xl font-bold">Aktivitätsübersicht</h1><p class="text-sm opacity-70">Neuigkeiten und wichtige Veröffentlichungen.</p>${news.map(n=>`<article class="glass p-4"><div class="flex justify-between gap-3"><b>${esc(n.title)}</b><span class="text-xs opacity-50">${fmt(n.ts)}</span></div><div class="text-sm opacity-70 mt-1">${esc(n.detail)}</div></article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine Neuigkeiten vorhanden.</div>'}</div>`;}
-function privateMessagesView(){const contacts=S.pubUsers.filter(u=>u.id!==S.user.uid&&canSendPrivateMessage(S.user,u));const msgs=S.privateMessages.slice();return `<div class="space-y-5 max-w-5xl mx-auto"><h1 class="text-2xl font-bold">Private Nachrichten</h1><section class="glass p-5 space-y-3"><h2 class="font-bold">Neue Nachricht</h2><select id="pm-to" class="inp"><option value="">Empfänger auswählen</option>${contacts.map(u=>`<option value="${u.id}">${esc(u.name)} · ${esc(u.role||'Schüler')}</option>`).join('')}</select><textarea id="pm-text" class="inp" rows="3" placeholder="Nachricht schreiben…"></textarea><button class="btn" onclick="sendPrivateMessage()">Senden</button></section><section class="space-y-2"><h2 class="font-bold">Unterhaltungen</h2>${msgs.map(m=>`<article class="glass p-4"><div class="flex justify-between gap-2 text-xs opacity-60"><b>${m.fromUid===S.user.uid?'An: '+esc(m.toName):'Von: '+esc(m.fromName)}</b><span>${fmt(m.createdAt)}</span></div><p class="mt-2 text-sm whitespace-pre-wrap">${esc(m.text)}</p>${m.toUid===S.user.uid&&!m.read?`<button class="btn2 mt-2" onclick="markPrivateRead('${m.id}')">Als gelesen markieren</button>`:''}</article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine privaten Nachrichten.</div>'}</section></div>`;}
-function helpCenterView(){return `<div class="space-y-5 max-w-5xl mx-auto"><h1 class="text-2xl font-bold">Hilfe-Center</h1><p class="text-sm opacity-70">Antworten auf häufige Fragen und Unterstützung.</p><div class="grid sm:grid-cols-2 gap-3">${S.helpArticles.map(a=>`<article class="glass p-4"><h2 class="font-bold">${esc(a.title)}</h2><p class="text-sm mt-2 whitespace-pre-wrap">${esc(a.body)}</p></article>`).join('')}</div>${S.helpArticles.length?'':'<div class="glass p-4 opacity-60">Noch keine Hilfethemen veröffentlicht.</div>'}<section class="glass p-5 space-y-2"><h2 class="font-bold">Du brauchst persönliche Hilfe?</h2><button class="btn" onclick="goProtected('tickets')">Support kontaktieren</button></section>${isStaff()?helpAdminEditor():''}</div>`;}
+function activityOverviewView(){const news=[...S.articles.map(a=>({title:a.title||'Artikel',detail:'Neuer Artikel',ts:a.createdAt})),...S.videos.map(v=>({title:v.title||'Video',detail:'Neues Video',ts:v.createdAt})),...S.boardItems.map(x=>({title:x.title||'Neuigkeit',detail:'Schwarzes Brett',ts:x.createdAt}))].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,40);return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="space-y-5 max-w-5xl mx-auto"><h1 class="text-2xl font-bold">Aktivitätsübersicht</h1><p class="text-sm opacity-70">Neuigkeiten und wichtige Veröffentlichungen.</p>${news.map(n=>`<article class="glass p-4"><div class="flex justify-between gap-3"><b>${esc(n.title)}</b><span class="text-xs opacity-50">${fmt(n.ts)}</span></div><div class="text-sm opacity-70 mt-1">${esc(n.detail)}</div></article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine Neuigkeiten vorhanden.</div>'}</div></section></div>`;}
+function privateMessagesView(){const contacts=S.pubUsers.filter(u=>u.id!==S.user.uid&&canSendPrivateMessage(S.user,u));const msgs=S.privateMessages.slice();return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="space-y-5 max-w-5xl mx-auto"><h1 class="text-2xl font-bold">Private Nachrichten</h1><section class="glass p-5 space-y-3"><h2 class="font-bold">Neue Nachricht</h2><select id="pm-to" class="inp"><option value="">Empfänger auswählen</option>${contacts.map(u=>`<option value="${u.id}">${esc(u.name)} · ${esc(u.role||'Schüler')}</option>`).join('')}</select><textarea id="pm-text" class="inp" rows="3" placeholder="Nachricht schreiben…"></textarea><button class="btn" onclick="sendPrivateMessage()">Senden</button></section><section class="space-y-2"><h2 class="font-bold">Unterhaltungen</h2>${msgs.map(m=>`<article class="glass p-4"><div class="flex justify-between gap-2 text-xs opacity-60"><b>${m.fromUid===S.user.uid?'An: '+esc(m.toName):'Von: '+esc(m.fromName)}</b><span>${fmt(m.createdAt)}</span></div><p class="mt-2 text-sm whitespace-pre-wrap">${esc(m.text)}</p>${m.toUid===S.user.uid&&!m.read?`<button class="btn2 mt-2" onclick="markPrivateRead('${m.id}')">Als gelesen markieren</button>`:''}</article>`).join('')||'<div class="glass p-6 text-center opacity-60">Noch keine privaten Nachrichten.</div>'}</section></div></section></div>`;}
+function helpCenterView(){return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="space-y-5 max-w-5xl mx-auto"><h1 class="text-2xl font-bold">Hilfe-Center</h1><p class="text-sm opacity-70">Antworten auf häufige Fragen und Unterstützung.</p><div class="grid sm:grid-cols-2 gap-3">${S.helpArticles.map(a=>`<article class="glass p-4"><h2 class="font-bold">${esc(a.title)}</h2><p class="text-sm mt-2 whitespace-pre-wrap">${esc(a.body)}</p></article>`).join('')}</div>${S.helpArticles.length?'':'<div class="glass p-4 opacity-60">Noch keine Hilfethemen veröffentlicht.</div>'}<section class="glass p-5 space-y-2"><h2 class="font-bold">Du brauchst persönliche Hilfe?</h2><button class="btn" onclick="goProtected('tickets')">Support kontaktieren</button></section>${isStaff()?helpAdminEditor():''}</div></section></div>`;}
 function helpAdminEditor(){return `<section class="glass p-5 space-y-3"><h2 class="font-bold">Hilfe-Thema hinzufügen</h2><input id="help-title" class="inp" placeholder="Titel"><textarea id="help-body" class="inp" rows="4" placeholder="Erklärung / Antwort"></textarea><button class="btn" onclick="saveHelpArticle()">Veröffentlichen</button>${S.helpArticles.map(a=>`<div class="flex justify-between gap-2 text-sm"><span>${esc(a.title)}</span><button class="btn2 !text-rose-500" onclick="deleteHelpArticle('${a.id}')">Löschen</button></div>`).join('')}</section>`;}
 const canSendPrivateMessage=(from,to)=>{const p=S.settings.privateMessagingPolicy||'all';return !(p==='staff'&&from.role!=='Admin'&&from.role!=='Medienscout'&&to.role!=='Admin'&&to.role!=='Medienscout');};
 window.setPrivateMessagingPolicy=async p=>{if(!S.user||S.user.role!=='Admin')return toast('Nur Admins dürfen das ändern.');await DB.set('settings','main',{...S.settings,setupDone:true,privateMessagingPolicy:p});toast('Nachrichtenberechtigung gespeichert.');};
@@ -1012,9 +1025,9 @@ window.deleteHelpArticle=async id=>{if(!isStaff())return toast('Nur Medienscouts
 
 // ---------- Schüler-Ansicht: Bewerbung ----------
 function studentApplyView(){
-  if(!S.settings.apps)return `<div class="glass p-6 text-amber-500">Die Bewerbungsphase ist aktuell geschlossen.</div>`;
+  if(!S.settings.apps)return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="glass p-6 text-amber-400">Die Bewerbungsphase ist aktuell geschlossen.</div></section></div>`;
   const existing=S.myApps[0];
-  return `<div class="max-w-2xl mx-auto space-y-6">
+  return `<div class="max-w-[1800px] mx-auto"><section class="panel"><div class="max-w-2xl mx-auto space-y-6">
     <div>
       <h1 class="text-2xl font-bold">Bewerbung als Medienscout</h1>
       <p class="text-sm opacity-75">Angemeldet als <b>${esc(S.user.name)}</b> (${esc(S.user.email)})</p>
@@ -1035,7 +1048,7 @@ function studentApplyView(){
            <div><label class="text-xs opacity-70 block mb-1">Warum möchtest du Medienscout werden?</label><textarea id="a-mot" rows="5" class="inp" placeholder="Erzähl uns kurz, warum du im Team mitmachen möchtest…"></textarea></div>
            <button class="btn" onclick="sendApp()"><i data-lucide="send" class="w-4 h-4"></i>Bewerbung absenden</button>
          </div>`}
-  </div>`;
+  </div></section></div>`;
 }
 
 // ---------- Login, Registrierung & Passwort vergessen ----------
@@ -1044,25 +1057,28 @@ window.goProtected=target=>{
   S.view=target;render();
 };
 
+let modalCloseTimer=null,authCloseTimer=null;
 const modal=h=>{
-  const chatHost=$('#chat-fullscreen')?.querySelector('#c-list')?$('#chat-fullscreen'):null;
-  const host=chatHost||$('#modal');
-  host.querySelector('#app-modal-layer')?.remove();
-  host.insertAdjacentHTML('beforeend',`<div id="app-modal-layer" class="fixed inset-0 z-[99999] lg-backdrop flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="lg-surface anim-modal w-full max-w-xl max-h-[90vh] overflow-auto p-6 sm:p-7 relative">${h}</div></div>`);
+  clearTimeout(modalCloseTimer);modalCloseTimer=null;
+  document.querySelectorAll('#app-modal-layer').forEach(el=>el.remove());
+  const host=$('#modal');if(!host)return;
+  host.innerHTML=`<div id="app-modal-layer" class="fixed inset-0 z-[99999] lg-backdrop flex items-center justify-center p-4" onclick="if(event.target==this)closeModal()"><div class="lg-surface anim-modal w-full max-w-xl max-h-[90vh] overflow-auto p-6 sm:p-7 relative">${h}</div></div>`;
   icons();
 };
 window.closeModal=()=>{
   S.open=null;S.authMsg='';
+  clearTimeout(modalCloseTimer);
   const layer=document.getElementById('app-modal-layer');
   if(layer){
-    layer.classList.add('closing');
+    layer.classList.add('closing','pointer-events-none');
     const card=layer.querySelector('.lg-surface');if(card)card.classList.add('anim-modal-out');
-    setTimeout(()=>layer.remove(),150);
+    modalCloseTimer=setTimeout(()=>{if(layer.parentNode)layer.remove();if(pendingRender&&!overlayOpen()){pendingRender=false;liveRender();}},150);
   }
   const af=$('#auth-fullscreen');
   if(af&&af.firstElementChild){
-    const el=af.firstElementChild;el.style.transition='opacity .16s ease';el.style.opacity='0';
-    setTimeout(()=>{if(S.open!=='login'&&af)af.innerHTML='';},150);
+    clearTimeout(authCloseTimer);
+    const el=af.firstElementChild;el.classList.add('pointer-events-none');el.style.transition='opacity .16s ease';el.style.opacity='0';
+    authCloseTimer=setTimeout(()=>{if(S.open!=='login'&&af)af.innerHTML='';if(pendingRender&&!overlayOpen()){pendingRender=false;liveRender();}},150);
   }
 };
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&($('#app-modal-layer')||$('#auth-fullscreen')?.firstElementChild))closeModal()});
@@ -1297,10 +1313,11 @@ function showSecurityBlock(countryName,message){
   let box=document.getElementById('security-block-screen');
   if(!box){box=document.createElement('div');box.id='security-block-screen';box.className='fixed inset-0 z-[99995] lg-fullscreen-auth flex items-center justify-center p-5';document.body.appendChild(box)}
   const country=countryName||'Unbekannt';
+  const safeMsg=esc(message||('Wir haben einen ungewöhnlichen Zugriff aus '+country+' erkannt. Der Zugriff auf diese Webseite wurde aus Sicherheitsgründen blockiert.'));
   box.innerHTML=`<div class="relative lg-surface w-full max-w-md p-7 text-center text-white space-y-4">
     ${ic('shield','w-12 h-12 mx-auto drop-shadow-md')}
     <h1 class="text-2xl font-bold">Zugriff gesperrt</h1>
-    <p class="text-sm leading-6 text-white/85">${message||('Wir haben einen ungewöhnlichen Zugriff aus '+country+' erkannt. Der Zugriff auf diese Webseite wurde aus Sicherheitsgründen blockiert.')}</p>
+    <p class="text-sm leading-6 text-white/85">${safeMsg}</p>
     <p class="text-xs text-white/70">Erkannter Standort: <b class="text-rose-200">${esc(country)}</b></p>
     <p class="text-xs text-white/65">Wenn du glaubst, dass dies ein Fehler ist, wende dich bitte an die Schule.</p>
   </div>`;
@@ -1370,11 +1387,21 @@ window.logout=()=>{closeModal();closeChat();clearAuthCookieBackup();signOut(auth
 let pendingImg={},unsubMsg=null;
 window.pick=async(inp,prev,max=900)=>{
   if(!inp.files[0])return;
-  pendingImg[prev]=await compress(inp.files[0],max);
-  $('#'+prev).innerHTML=`<div class="relative inline-block mt-1"><img src="${pendingImg[prev]}" class="h-16 rounded-lg border border-slate-500/30"><button class="btn2 !p-1 absolute -top-2 -right-2" onclick="pendingImg['${prev}']=null;$('#${prev}').innerHTML=''"><i data-lucide="x" class="w-3 h-3"></i></button></div>`;
+  const src=safeImgSrc(await compress(inp.files[0],max));
+  if(!src){inp.value='';return toast('Ungültiges Bildformat.');}
+  pendingImg[prev]=src;
+  $('#'+prev).innerHTML=`<div class="relative inline-block mt-1"><img src="${esc(src)}" class="h-16 rounded-lg border border-slate-500/30"><button type="button" class="btn2 !p-1 absolute -top-2 -right-2" onclick="pendingImg['${esc(prev)}']=null;$('#${esc(prev)}').innerHTML=''"><i data-lucide="x" class="w-3 h-3"></i></button></div>`;
   inp.value='';icons();
 };
-window.zoom=s=>{const d=document.createElement('div');d.className='fixed inset-0 z-[130] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out';d.onclick=()=>d.remove();d.innerHTML=`<img src="${s}" class="max-w-full max-h-full rounded-lg">`;document.body.appendChild(d)};
+window.zoom=s=>{
+  const safe=safeImgSrc(s);if(!safe)return;
+  const d=document.createElement('div');
+  d.className='fixed inset-0 z-[100001] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out';
+  d.onclick=()=>d.remove();
+  const img=document.createElement('img');
+  img.src=safe;img.alt='';img.className='max-w-full max-h-full rounded-lg';
+  d.appendChild(img);document.body.appendChild(d);
+};
 
 window.createTicket=async()=>{
   const cat=val('t-cat'),subj=val('t-subj'),msg=val('t-msg');
@@ -1421,10 +1448,16 @@ window.startTicketForStudent=async(uid,name,email)=>{
 };
 
 let chatSessionToken=0,lastChatMsgs=[],chatPwCache={},chatPwState={};
+const getCachedTicket=id=>{
+  if(window._activeChatState?.id===id&&window._activeChatState.t)return window._activeChatState.t;
+  return S.tickets.find(x=>x.id===id)||S.myTickets.find(x=>x.id===id)||null;
+};
 window.closeChat=()=>{
-  chatSessionToken++;S.openingChatId=null;S.decryptedChatPw={};S.revealedChatPw={};chatPwCache={};chatPwState={};
+  chatSessionToken++;S.openingChatId=null;S.sendingMsg=false;S.submittingSlash=false;S.decryptedChatPw={};S.revealedChatPw={};chatPwCache={};chatPwState={};
+  window._activeChatState=null;
   unsubMsg&&unsubMsg();unsubMsg=null;
   const host=$('#chat-fullscreen');if(host)host.innerHTML='';
+  if(pendingRender&&!overlayOpen()){pendingRender=false;liveRender();}
 };
 
 function renderChatMessages(id,t,asAdmin,ms,pwc,pwStatus='idle'){
@@ -1455,18 +1488,19 @@ function renderChatMessages(id,t,asAdmin,ms,pwc,pwStatus='idle'){
     }
   }
   l.innerHTML=(visibleMs.map(m=>{
+    const mImg=safeImgSrc(m.img);
     if(m.internal){
       return `<div class="flex justify-center anim-msg-in"><div class="max-w-xl w-full px-4 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs">
         <div class="font-bold flex items-center gap-1.5 mb-0.5"><i data-lucide="lock" class="w-3.5 h-3.5"></i>Interne Scout-Notiz von ${esc(m.senderName)} · ${fmt(m.ts)}</div>
         <div>${esc(m.text).replace(/\n/g,'<br>')}</div>
-        ${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-40 cursor-zoom-in">`:''}
+        ${mImg?`<img src="${esc(mImg)}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-40 cursor-zoom-in" alt="">`:''}
       </div></div>`;
     }
     return `<div class="flex ${m.from==mySide?'justify-end':'justify-start'} anim-msg-in">
-      <div class="max-w-[80%] sm:max-w-[70%] px-4 py-3 rounded-2xl text-sm shadow-xs ${m.senderRole==='Admin'?'bg-rose-600 text-white':m.senderRole==='Medienscout'?'bg-amber-400 text-slate-950':m.senderRole==='User'?'bg-emerald-600 text-white':m.from==mySide?'bg-blue-600 text-white':'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
+      <div class="max-w-[80%] sm:max-w-[70%] px-4 py-3 rounded-2xl text-sm shadow-xs ${m.senderRole==='Admin'?'bg-rose-600 text-white':m.senderRole==='Medienscout'?'bg-amber-400 text-slate-950':m.senderRole==='User'?'bg-emerald-600 text-white':m.from==mySide?'bg-[#0a84ff] text-white':'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}">
         <div class="text-[11px] opacity-75 mb-1 font-medium">${esc(m.senderName||(m.from=='scout'?'Medienscout':'Schüler'))} · ${fmt(m.ts)}</div>
         ${m.text?`<div class="leading-relaxed">${esc(m.text).replace(/\n/g,'<br>')}</div>`:''}
-        ${m.img?`<img src="${m.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 cursor-zoom-in border border-white/20">`:''}
+        ${mImg?`<img src="${esc(mImg)}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-56 cursor-zoom-in border border-white/20" alt="">`:''}
       </div>
     </div>`;
   }).join('')+privateCard)||`<div class="text-center opacity-50 text-sm py-12">Noch keine Nachrichten.</div>`;
@@ -1501,16 +1535,18 @@ window.openChat=async(id,asAdmin)=>{
   if(S.openingChatId===id)return;
   S.openingChatId=id;
   const myToken=++chatSessionToken;
-  chatPwCache={};chatPwState={};
-  // Sofort aus dem bereits geladenen Cache öffnen – verhindert 3-Minuten-Wartezeiten bei träger Safari/Firestore-Verbindung
+  chatPwCache={};chatPwState={};S.sendingMsg=false;S.submittingSlash=false;
   let t=(asAdmin?S.tickets:S.myTickets).find(x=>x.id===id)||S.myTickets.find(x=>x.id===id)||S.tickets.find(x=>x.id===id)||null;
-  if(!t){
-    $('#chat-fullscreen').innerHTML=`<div class="fixed inset-0 z-[100] lg-backdrop flex items-center justify-center p-6 text-white"><div class="lg-surface anim-modal p-6 text-center space-y-3 max-w-xs w-full"><div class="font-semibold">Chat wird geöffnet…</div><div class="h-1.5 rounded-full bg-white/15 ms-shimmer"></div><button type="button" class="btn2" onclick="closeChat()">Abbrechen</button></div></div>`;
-    try{t=await withTimeout(DB.get('tickets',id),8000,'Ticket konnte nicht rechtzeitig geladen werden.');}
-    catch(e){console.error('Ticket-Ladefehler:',e);if(myToken===chatSessionToken)closeChat();return toast('Chat konnte nicht geladen werden: '+(e.code||e.message||e));}
-    if(myToken!==chatSessionToken)return;
+  try{
+    if(!t){
+      $('#chat-fullscreen').innerHTML=`<div class="fixed inset-0 z-[100] lg-backdrop flex items-center justify-center p-6 text-white"><div class="lg-surface anim-modal p-6 text-center space-y-3 max-w-xs w-full"><div class="font-semibold">Chat wird geöffnet…</div><div class="h-1.5 rounded-full bg-white/15 ms-shimmer"></div><button type="button" class="btn2" onclick="closeChat()">Abbrechen</button></div></div>`;
+      try{t=await withTimeout(DB.get('tickets',id),8000,'Ticket konnte nicht rechtzeitig geladen werden.');}
+      catch(e){console.error('Ticket-Ladefehler:',e);if(myToken===chatSessionToken)closeChat();return toast('Chat konnte nicht geladen werden: '+(e.code||e.message||e));}
+      if(myToken!==chatSessionToken)return;
+    }
+  }finally{
+    if(S.openingChatId===id)S.openingChatId=null;
   }
-  S.openingChatId=null;
   if(!t){closeChat();return toast('Ticket nicht gefunden.');}
   if(asAdmin&&!isStaff()){closeChat();return toast('Keine Berechtigung.');}
   if(asAdmin&&S.user.role!=='Admin'&&(t.passwordReset||(t.assignedUid&&t.assignedUid!==S.user.uid))){closeChat();return toast('Kein Zugriff auf dieses Ticket.');}
@@ -1535,7 +1571,7 @@ window.openChat=async(id,asAdmin)=>{
       </div>
 
       ${asAdmin?`<div class="flex items-center gap-2 shrink-0">
-        <button type="button" class="btn2 !text-blue-500" onclick="claimTicket('${id}')"><i data-lucide="hand" class="w-4 h-4"></i><span class="hidden sm:inline">Ich übernehme</span></button>
+        <button type="button" class="btn2 !text-[#4aa8ff]" onclick="claimTicket('${id}')"><i data-lucide="hand" class="w-4 h-4"></i><span class="hidden sm:inline">Ich übernehme</span></button>
         <select class="inp !w-auto !py-1.5 !px-2.5 text-xs" onchange="updStatus('${id}',this.value)">
           ${['Neu','In Bearbeitung','Gelöst'].map(s=>`<option ${s==t.status?'selected':''}>${s}</option>`).join('')}
         </select>
@@ -1551,13 +1587,13 @@ window.openChat=async(id,asAdmin)=>{
       <div class="max-w-4xl mx-auto space-y-2">
         <div id="c-prev"></div>
         ${asAdmin?`<div class="flex flex-wrap items-center gap-2 text-xs">
-          <button type="button" id="btn-mode-chat" class="px-3 py-1 rounded-lg font-medium bg-blue-600 text-white cursor-pointer" onclick="setChatMode(false)">Antwort an Schüler</button>
+          <button type="button" id="btn-mode-chat" class="px-3 py-1 rounded-lg font-medium bg-[#0a84ff] text-white cursor-pointer" onclick="setChatMode(false)">Antwort an Schüler</button>
           <button type="button" id="btn-mode-note" class="px-3 py-1 rounded-lg font-medium bg-amber-500/20 text-amber-500 cursor-pointer" onclick="setChatMode(true)"><i data-lucide="eye-off" class="w-3.5 h-3.5 inline"></i> Interne Team-Notiz (unsichtbar für Schüler)</button>
-          ${t.passwordReset&&S.user.role==='Admin'&&S.settings.slashCommandsEnabled?`<button type="button" class="px-3 py-1 rounded-lg font-medium bg-emerald-600 text-white cursor-pointer ml-auto" onclick="runSlashCommand('${id}','/passwort')">🔐 Passwort verschlüsselt senden</button>`:''}
+          ${t.passwordReset&&S.user.role==='Admin'&&S.settings.slashCommandsEnabled?`<button type="button" class="px-3 py-1 rounded-lg font-medium bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer ml-auto transition" onclick="runSlashCommand('${id}','/passwort')">🔐 Passwort verschlüsselt senden</button>`:''}
         </div>`:''}
         <div class="flex gap-2">
           <label class="btn2 shrink-0" title="Screenshot hochladen"><i data-lucide="image" class="w-5 h-5"></i><input type="file" accept="image/*" hidden onchange="pick(this,'c-prev')"></label>
-          <input id="s-c-msg" class="inp" placeholder="${asAdmin?'Nachricht eingeben… (/passwort bei Passwort-Tickets)':'Nachricht eingeben…'}" onkeydown="if(event.key=='Enter')sendMsg('${id}',${asAdmin})">
+          <input id="s-c-msg" class="inp" placeholder="${asAdmin?'Nachricht eingeben… (/passwort bei Passwort-Tickets)':'Nachricht eingeben…'}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg('${id}',${asAdmin});}">
           <button type="button" id="btn-chat-send" class="btn shrink-0" onclick="sendMsg('${id}',${asAdmin})"><i data-lucide="send" class="w-4 h-4"></i>Senden</button>
         </div>
       </div>
@@ -1567,7 +1603,6 @@ window.openChat=async(id,asAdmin)=>{
   if(!asAdmin&&t.status==='Gelöst')$('#c-prev').closest('.glass').innerHTML=`<div class="max-w-4xl mx-auto flex items-center justify-between gap-3 flex-wrap"><span class="text-sm opacity-70">Dieses Ticket ist gelöst.</span><button type="button" class="btn" onclick="reopenTicket('${id}')">Du hast noch weitere Fragen?</button></div>`;
 
   window._activeChatState={id,t,asAdmin,pwc:null};
-  // Im Hintergrund still synchronisieren, ohne das Öffnen zu blockieren
   withTimeout(DB.get('tickets',id),8000).then(fresh=>{
     if(!fresh||myToken!==chatSessionToken)return;
     t=fresh;
@@ -1585,14 +1620,13 @@ window.openChat=async(id,asAdmin)=>{
     const stState=chatPwState[id]||'idle';
     const pwc=chatPwCache[id]||null;
     window._activeChatState={id,t:activeT,asAdmin,pwc};
-    // Nachrichten sofort anzeigen, niemals auf Passwort-Abruf warten
     renderChatMessages(id,activeT,asAdmin,ms,pwc,isOwner&&hasPw?(stState==='idle'?'loading':stState):'idle');
     if(isOwner&&hasPw&&stState==='idle')loadTicketPassword(id,myToken);
   },err=>{
     if(myToken!==chatSessionToken)return;
     const l=$('#c-list');
-    if(l)l.innerHTML=`<div class="glass p-6 text-center space-y-3 my-8"><div class="font-semibold text-amber-500">Nachrichten konnten nicht geladen werden</div><div class="text-xs opacity-70">${esc(err?.code||err?.message||'Verbindungsfehler')}</div><button type="button" class="btn2" onclick="openChat('${id}',${asAdmin})">Erneut öffnen</button></div>`;
-  });
+    if(l)l.innerHTML=`<div class="glass p-6 text-center space-y-3 my-8"><div class="font-semibold text-amber-500">Nachrichten konnten nicht geladen werden</div><div class="text-xs opacity-70">${esc(err?.code||err?.message||'Verbindungsfehler')}</div><button type="button" class="btn" onclick="openChat('${id}',${asAdmin})">Erneut öffnen</button></div>`;
+  },asAdmin);
 };
 
 window.unlockTicketPassword=async id=>{
@@ -1644,7 +1678,7 @@ window.setChatMode=isNote=>{
     inp.placeholder='Interne Flüster-Notiz nur für Scouts/Admins schreiben…';
     sendBtn.className='btn shrink-0 !bg-amber-500 hover:!bg-amber-400';
   }else{
-    bChat.className='px-3 py-1 rounded-lg font-medium bg-blue-600 text-white cursor-pointer';
+    bChat.className='px-3 py-1 rounded-lg font-medium bg-[#0a84ff] text-white cursor-pointer';
     bNote.className='px-3 py-1 rounded-lg font-medium bg-amber-500/20 text-amber-500 cursor-pointer';
     inp.placeholder='Nachricht an Schüler eingeben…';
     sendBtn.className='btn shrink-0';
@@ -1652,56 +1686,71 @@ window.setChatMode=isNote=>{
 };
 
 window.claimTicket=async id=>{
-  const ticket=S.tickets.find(t=>t.id===id)||await DB.get('tickets',id);
+  const ticket=getCachedTicket(id)||await withTimeout(DB.get('tickets',id),8000);
   if(!ticket)return toast('Ticket nicht gefunden.');
   if(ticket.status==='Gelöst')return toast('Gelöste Tickets können nicht übernommen werden.');
   if(!isStaff())return toast('Keine Berechtigung.');
   if(ticket.passwordReset&&S.user.role!=='Admin')return toast('Passwort-Tickets dürfen nur Admins übernehmen.');
   if(ticket.assignedUid&&ticket.assignedUid!==S.user.uid&&S.user.role!=='Admin')return toast('Dieses Ticket wurde schon übernommen.');
-  await DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()});
+  await withTimeout(DB.upd('tickets',id,{assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung',updatedAt:Date.now()}),8000);
+  if(window._activeChatState?.id===id){window._activeChatState.t={...window._activeChatState.t,assignedUid:S.user.uid,assignedName:S.user.name,status:'In Bearbeitung'};}
   if($('#c-assign'))$('#c-assign').textContent='Betreuer: '+S.user.name;
   if($('#c-st'))$('#c-st').innerHTML=badge('In Bearbeitung');
   toast('Du hast das Ticket übernommen.');
 };
 
 window.updStatus=async(id,st)=>{
-  const t=await DB.get('tickets',id);if(!t)return;
+  const t=getCachedTicket(id)||await withTimeout(DB.get('tickets',id),8000);if(!t)return;
   if(t.passwordReset&&S.user?.role!=='Admin')return toast('Nur Admins dürfen den Status von Passwort-Tickets ändern.');
-  await DB.upd('tickets',id,{status:st,updatedAt:Date.now(),...(st==='Gelöst'?{resolvedAt:Date.now(),unreadStudent:true,...(t.passwordReset?{assignedUid:null,assignedName:null}:{})}:{})});
+  await withTimeout(DB.upd('tickets',id,{status:st,updatedAt:Date.now(),...(st==='Gelöst'?{resolvedAt:Date.now(),unreadStudent:true,...(t.passwordReset?{assignedUid:null,assignedName:null}:{})}:{})}),8000);
+  if(window._activeChatState?.id===id)window._activeChatState.t={...window._activeChatState.t,status:st};
   if(st==='Gelöst'){closeChat();toast('Ticket gelöst. Es ist jetzt nur noch für den Schüler sichtbar.')}
   else if($('#c-st'))$('#c-st').innerHTML=badge(st);
 };
 
 // Schüler öffnet ein gelöstes Ticket wieder (mit Warnhinweis)
 window.reopenTicket=async id=>{
-  const t=await DB.get('tickets',id);if(!t||t.uid!==S.user?.uid)return;
+  const t=getCachedTicket(id)||await withTimeout(DB.get('tickets',id),8000);if(!t||t.uid!==S.user?.uid)return;
   if(!confirm('Achtung: Der bisherige Chat, den bisher nur Admins und zuständige Medienscouts sehen konnten, wird jetzt für alle Medienscouts sichtbar, damit sie wissen, worum es geht. Passwörter bleiben verdeckt und sind nur für dich sichtbar.\n\nDas Ticket kann dann von allen berechtigten Personen gesehen werden, bis es wieder von jemandem übernommen wird.\n\nEinverstanden?'))return;
-  await DB.upd('tickets',id,{passwordReset:false,status:'Neu',assignedUid:null,assignedName:null,updatedAt:Date.now(),unreadAdmin:true,unreadStudent:false,reopened:true});
+  await withTimeout(DB.upd('tickets',id,{passwordReset:false,status:'Neu',assignedUid:null,assignedName:null,updatedAt:Date.now(),unreadAdmin:true,unreadStudent:false,reopened:true}),8000);
+  if(window._activeChatState?.id===id)window._activeChatState.t={...window._activeChatState.t,passwordReset:false,status:'Neu',assignedUid:null,assignedName:null,reopened:true};
   openChat(id,false);
 };
 
 window.sendMsg=async(id,asAdmin)=>{
-  const currentTicket=await DB.get('tickets',id);if(!currentTicket)return toast('Ticket nicht gefunden.');
-  if(currentTicket.status==='Gelöst')return toast('Dieses Ticket ist gelöst.');
-  const text=val('s-c-msg'),img=pendingImg['c-prev']||null;if(!text&&!img)return;
+  if(S.sendingMsg)return;
+  const text=val('s-c-msg'),img=pendingImg['c-prev']||null;
+  if(!text&&!img)return;
   if(asAdmin&&!S.chatNoteMode&&text.startsWith('/')){$('#s-c-msg').value='';await runSlashCommand(id,text);return;}
-  const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
-  await DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(S.user.role==='Admin'?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(S.user.role==='Admin'?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now});
-  $('#s-c-msg').value='';pendingImg['c-prev']=null;$('#c-prev').innerHTML='';
-  if(!isInternal)await DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false}).catch(e=>console.warn('Ticket-Status-Update übersprungen:',e));
+  const sendBtn=$('#btn-chat-send');
+  S.sendingMsg=true;if(sendBtn)sendBtn.disabled=true;
+  try{
+    const currentTicket=getCachedTicket(id)||await withTimeout(DB.get('tickets',id),8000);
+    if(!currentTicket)return toast('Ticket nicht gefunden.');
+    if(currentTicket.status==='Gelöst')return toast('Dieses Ticket ist gelöst.');
+    const now=Date.now(),isInternal=asAdmin&&S.chatNoteMode;
+    await withTimeout(DB.addMsg(id,{from:asAdmin?'scout':'student',senderName:S.user.name+(asAdmin?(S.user.role==='Admin'?' (Admin)':' (Medienscout)'):''),senderRole:asAdmin?(S.user.role==='Admin'?'Admin':'Medienscout'):'User',text,img,internal:isInternal,ts:now}),10000,'Nachricht konnte nicht gesendet werden (Zeitüberschreitung).');
+    if($('#s-c-msg'))$('#s-c-msg').value='';
+    pendingImg['c-prev']=null;if($('#c-prev'))$('#c-prev').innerHTML='';
+    if(!isInternal)DB.upd('tickets',id,asAdmin?{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}:{updatedAt:now,unreadAdmin:true,unreadStudent:false}).catch(e=>console.warn('Ticket-Status-Update übersprungen:',e));
+  }catch(e){
+    toast('Senden fehlgeschlagen: '+(e.code||e.message||e));
+  }finally{
+    S.sendingMsg=false;if(sendBtn)sendBtn.disabled=false;
+  }
 };
 
 // ---------- Slash-Befehle ----------
 const defaultSlashCommands=()=>[{id:'passwort',name:'passwort',label:'Passwort wurde geändert',active:true,requiresPassword:true,roles:['Admin'],message:'Dein Passwort wurde geändert. Bitte nutze die folgende Anleitung, um dich mit deinem neuen Passwort anzumelden. Das Passwort erhältst du separat über einen geschützten Weg.',image:''}];
 window.openSlashEditor=id=>{
   const list=S.settings.slashCommands||defaultSlashCommands(),c=list.find(x=>x.id===id)||{id:'cmd-'+Date.now(),name:'neuer-befehl',label:'Neue Nachricht',active:true,requiresPassword:false,roles:['Admin','Medienscout'],message:'',image:''};
-  const isPw=c.name==='passwort';
+  const isPw=c.name==='passwort',cImg=safeImgSrc(c.image);
   modal(`<div class="space-y-4"><div class="flex items-center justify-between gap-3"><div class="flex items-center gap-3">${ic(isPw?'key':'shield','w-8 h-8')}<h3 class="font-bold text-lg">${id?'Befehl bearbeiten':'Neuen Befehl erstellen'}</h3></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div>
     <label class="block text-xs">Befehlsname (ohne /)<input id="sc-name" class="inp mt-1" value="${esc(c.name)}" placeholder="passwort" ${isPw?'readonly':''}></label>
     <label class="block text-xs">Bezeichnung<input id="sc-label" class="inp mt-1" value="${esc(c.label)}"></label>
     <label class="block text-xs">Chat-Nachricht<textarea id="sc-message" rows="4" class="inp mt-1" placeholder="Nachricht an den Schüler…">${esc(c.message||'')}</textarea></label>
     <div class="text-xs">Bild (optional)
-      <div id="sc-image-prev" class="mt-1">${c.image?`<img src="${c.image}" class="h-20 rounded-xl">`:''}</div>
+      <div id="sc-image-prev" class="mt-1">${cImg?`<img src="${esc(cImg)}" class="h-20 rounded-xl" alt="">`:''}</div>
       <label class="btn2 mt-1"><i data-lucide="image" class="w-4 h-4"></i>Bild auswählen<input type="file" accept="image/*" hidden onchange="pickSlashImage(this)"></label>
       <button type="button" class="btn2 mt-1 !text-rose-400" onclick="window._slashImg='';$('#sc-image-prev').innerHTML=''">Bild entfernen</button>
     </div>
@@ -1709,19 +1758,19 @@ window.openSlashEditor=id=>{
     <label class="flex items-center gap-2 text-sm"><input id="sc-password" type="checkbox" class="accent-emerald-400" ${c.requiresPassword?'checked':''} ${isPw?'disabled':''}> Vor dem Senden Zugangsdaten-Felder anzeigen</label>
     <label class="block text-xs">Wer darf den Befehl nutzen?<select id="sc-roles" class="inp mt-1"><option value="both" ${(c.roles||[]).length!==1?'selected':''}>Admin und Medienscout</option><option value="admin" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Admin'?'selected':''}>Nur Admin</option><option value="scout" ${(c.roles||[]).length===1&&(c.roles||[])[0]==='Medienscout'?'selected':''}>Nur Medienscout</option></select></label>
     <button type="button" class="btn w-full" data-id="${esc(c.id)}" onclick="saveSlashCommand(this.dataset.id)">Befehl speichern</button></div>`);
-  window._slashImg=c.image||'';
+  window._slashImg=cImg||'';
 };
 window.pickSlashImage=async inp=>{
   if(!inp.files[0])return;
   window._slashImg=await compress(inp.files[0],1000,0.8);
-  $('#sc-image-prev').innerHTML=`<img src="${window._slashImg}" class="h-20 rounded-lg">`;inp.value='';
+  $('#sc-image-prev').innerHTML=`<img src="${esc(safeImgSrc(window._slashImg))}" class="h-20 rounded-lg" alt="">`;inp.value='';
 };
 window.saveSlashCommand=async id=>{
   const name=val('sc-name').toLowerCase().replace(/[^a-z0-9_-]/g,'');if(!name)return toast('Bitte einen gültigen Befehlsnamen eingeben.');
   const list=[...(S.settings.slashCommands||defaultSlashCommands())];if(list.some(x=>x.name===name&&x.id!==id))return toast('Diesen Befehl gibt es bereits.');
   let roles=val('sc-roles')==='admin'?['Admin']:val('sc-roles')==='scout'?['Medienscout']:['Admin','Medienscout'];
   const requiresPassword=name==='passwort'?true:$('#sc-password').checked;if(name==='passwort')roles=['Admin'];
-  const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:window._slashImg||'',active:$('#sc-active').checked,requiresPassword,roles};
+  const c={id:id||'cmd-'+Date.now(),name,label:val('sc-label')||('/'+name),message:$('#sc-message').value,image:safeImgSrc(window._slashImg)||'',active:$('#sc-active').checked,requiresPassword,roles};
   const exists=list.some(x=>x.id===id);
   const next=exists?list.map(x=>x.id===id?c:x):[...list,c];
   await DB.set('settings','main',{...S.settings,setupDone:true,slashCommands:next});closeModal();toast('Slash-Befehl gespeichert.');render();
@@ -1734,33 +1783,53 @@ window.runSlashCommand=async(ticketId,input)=>{
   if(name==='passwort'&&S.user?.role!=='Admin')return toast('Der Passwort-Befehl ist ausschließlich Admins vorbehalten.');
   if(!(cmd.roles||['Admin','Medienscout']).includes(S.user.role))return toast('Du darfst diesen Befehl nicht verwenden.');
   if(name==='passwort'&&!S.settings.passwordSupport)return toast('Der Passwort-Support ist deaktiviert.');
-  const ticket=await DB.get('tickets',ticketId);if(!ticket)return toast('Ticket nicht gefunden.');
+  let ticket=getCachedTicket(ticketId);
+  if(!ticket||(cmd.requiresPassword&&!ticket.e2eePublicKey)){
+    try{ticket=await withTimeout(DB.get('tickets',ticketId),8000)||ticket;}catch(_){}
+  }
+  if(!ticket)return toast('Ticket nicht gefunden.');
   if(name==='passwort'&&!ticket.passwordReset)return toast('Der Passwort-Befehl kann nur in Passwort-Tickets genutzt werden.');
   if(cmd.requiresPassword&&!ticket.e2eePublicKey)return toast('Dieses ältere Ticket hat keinen Verschlüsselungs-Schlüssel. Bitte den Schüler bitten, ein neues Passwort-Ticket zu öffnen.');
-  const guideText=name==='passwort'?(S.settings.pwGuideText||cmd.message||''):(cmd.message||''),guideImg=name==='passwort'?(S.settings.pwGuideImage||cmd.image||''):(cmd.image||'');
+  const guideText=name==='passwort'?(S.settings.pwGuideText||cmd.message||''):(cmd.message||''),guideImg=safeImgSrc(name==='passwort'?(S.settings.pwGuideImage||cmd.image||''):(cmd.image||''));
   modal(`<div class="space-y-4"><div class="flex items-center justify-between gap-2"><div class="flex items-center gap-3 flex-wrap">${ic(cmd.requiresPassword?'key':'ticket','w-8 h-8')}<h3 class="font-bold text-lg">${esc(cmd.label||('/'+name))}</h3>${cmd.requiresPassword?'<span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">🔒 Ende-zu-Ende-verschlüsselt</span>':''}</div><button type="button" class="lg-close shrink-0" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div><p class="text-xs opacity-75">Empfänger: ${esc(ticket.userName)} · ${esc(ticket.userEmail)}${ticket.passwordPlatform?' · App: <b>'+esc(ticket.passwordPlatform)+'</b>':''}</p>
-    ${cmd.requiresPassword?'<label class="block text-xs">Benutzername<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort"></label>':''}
-    <div class="lg-subcard p-3.5 text-sm whitespace-pre-wrap">${esc(guideText)}</div>${guideImg?'<img src="'+guideImg+'" class="rounded-xl max-h-48 object-contain">':''}
+    ${cmd.requiresPassword?`<label class="block text-xs">Benutzername<input id="sc-username" class="inp mt-1" autocomplete="off" placeholder="Benutzername" onkeydown="if(event.key==='Enter'){event.preventDefault();$('#sc-secret')?.focus();}"></label><label class="block text-xs">Neues Passwort<input id="sc-secret" type="password" autocomplete="new-password" class="inp mt-1" placeholder="Neues Passwort" onkeydown="if(event.key==='Enter'){event.preventDefault();$('#btn-slash-submit')?.click();}"></label>`:''}
+    <div class="lg-subcard p-3.5 text-sm whitespace-pre-wrap">${esc(guideText)}</div>${guideImg?'<img src="'+esc(guideImg)+'" class="rounded-xl max-h-48 object-contain" alt="">':''}
     ${cmd.requiresPassword?'<p class="text-xs text-emerald-300">🔒 Benutzername & Passwort werden direkt in deinem Browser mit dem öffentlichen Schlüssel des Schülers verschlüsselt. Nur der Schüler kann sie im Chat mit seinem Medienscouts-Passwort entschlüsseln.</p>':''}
-    <div class="flex gap-2.5"><button type="button" class="btn2 flex-1 py-2.5" onclick="closeModal()">Abbrechen</button><button type="button" class="btn flex-1 py-2.5" data-t="${esc(ticketId)}" data-c="${esc(cmd.id)}" onclick="submitSlashCommand(this.dataset.t,this.dataset.c)">${cmd.requiresPassword?'Verschlüsselt senden':'Nachricht senden'}</button></div></div>`);
+    <div class="flex gap-2.5"><button type="button" class="btn2 flex-1 py-2.5" onclick="closeModal()">Abbrechen</button><button type="button" id="btn-slash-submit" class="btn flex-1 py-2.5" data-t="${esc(ticketId)}" data-c="${esc(cmd.id)}" onclick="submitSlashCommand(this.dataset.t,this.dataset.c)">${cmd.requiresPassword?'Verschlüsselt senden':'Nachricht senden'}</button></div></div>`);
+  setTimeout(()=>$('#sc-username')?.focus(),40);
 };
 window.submitSlashCommand=async(ticketId,cmdId)=>{
+  if(S.submittingSlash)return;
   const cmd=(S.settings.slashCommands||defaultSlashCommands()).find(x=>x.id===cmdId);if(!cmd)return toast('Befehl nicht gefunden.');
-  const ticket=await DB.get('tickets',ticketId);if(!ticket)return toast('Ticket nicht gefunden.');
-  const now=Date.now();
-  if(cmd.requiresPassword){
-    if(S.user?.role!=='Admin'||!ticket.passwordReset)return toast('Nur Admins dürfen Zugangsdaten in Passwort-Tickets versenden.');
-    if(!ticket.e2eePublicKey)return toast('Ticket hat keinen Verschlüsselungs-Schlüssel.');
-    const secret=$('#sc-secret')?.value||'',username=$('#sc-username')?.value.trim()||'';
-    if(!secret)return toast('Bitte das neue Passwort eingeben.');
-    const enc=await E2EE.encryptForTicket(ticket.e2eePublicKey,{platform:ticket.passwordPlatform||'',username,password:secret});
-    await DB.passwordSet(ticketId,{ticketId,uid:ticket.uid,platform:ticket.passwordPlatform||'',...enc,createdAt:now,expiresAt:Timestamp.fromDate(new Date(now+3*24*60*60*1000))});
-    await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+' (Admin)',senderRole:'Admin',text:S.settings.pwGuideText||cmd.message||'Dein Passwort wurde zurückgesetzt. Bitte beachte die folgende Anleitung.',img:S.settings.pwGuideImage||cmd.image||null,internal:false,ts:now,passwordCard:true,e2ee:true});
-    await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'Gelöst',resolvedAt:now,assignedUid:null,assignedName:null});
-    closeModal();closeChat();toast('Zugangsdaten Ende-zu-Ende-verschlüsselt gesendet. Ticket gelöst.');return;
+  const btn=$('#btn-slash-submit'),origText=btn?.textContent||'';
+  S.submittingSlash=true;if(btn){btn.disabled=true;btn.textContent=cmd.requiresPassword?'Wird verschlüsselt gesendet…':'Wird gesendet…';}
+  try{
+    let ticket=getCachedTicket(ticketId);
+    if(!ticket||(cmd.requiresPassword&&!ticket.e2eePublicKey)){
+      ticket=await withTimeout(DB.get('tickets',ticketId),8000);
+    }
+    if(!ticket)return toast('Ticket nicht gefunden.');
+    const now=Date.now();
+    if(cmd.requiresPassword){
+      if(S.user?.role!=='Admin'||!ticket.passwordReset)return toast('Nur Admins dürfen Zugangsdaten in Passwort-Tickets versenden.');
+      if(!ticket.e2eePublicKey)return toast('Ticket hat keinen Verschlüsselungs-Schlüssel.');
+      const secret=$('#sc-secret')?.value||'',username=$('#sc-username')?.value.trim()||'';
+      if(!secret){$('#sc-secret')?.focus();return toast('Bitte das neue Passwort eingeben.');}
+      const enc=await E2EE.encryptForTicket(ticket.e2eePublicKey,{platform:ticket.passwordPlatform||'',username,password:secret});
+      await withTimeout(DB.passwordSet(ticketId,{ticketId,uid:ticket.uid,platform:ticket.passwordPlatform||'',...enc,createdAt:now,expiresAt:Timestamp.fromDate(new Date(now+3*24*60*60*1000))}),10000,'Verschlüsselte Daten konnten nicht gespeichert werden.');
+      await withTimeout(DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+' (Admin)',senderRole:'Admin',text:S.settings.pwGuideText||cmd.message||'Dein Passwort wurde zurückgesetzt. Bitte beachte die folgende Anleitung.',img:safeImgSrc(S.settings.pwGuideImage||cmd.image)||null,internal:false,ts:now,passwordCard:true,e2ee:true}),10000);
+      await withTimeout(DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'Gelöst',resolvedAt:now,assignedUid:null,assignedName:null}),10000);
+      closeModal();closeChat();toast('Zugangsdaten Ende-zu-Ende-verschlüsselt gesendet. Ticket gelöst.');return;
+    }
+    await withTimeout(DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+(S.user.role==='Admin'?' (Admin)':' (Medienscout)'),senderRole:S.user.role,text:cmd.message||'',img:safeImgSrc(cmd.image)||null,internal:false,ts:now}),10000);
+    await withTimeout(DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'}),10000);
+    closeModal();toast('Nachricht gesendet.');
+  }catch(e){
+    console.error('Slash-Befehl Fehler:',e);
+    toast('Fehler beim Senden: '+(e.code||e.message||e));
+  }finally{
+    S.submittingSlash=false;if(btn){btn.disabled=false;btn.textContent=origText;}
   }
-  await DB.addMsg(ticketId,{from:'scout',senderName:S.user.name+(S.user.role==='Admin'?' (Admin)':' (Medienscout)'),senderRole:S.user.role,text:cmd.message||'',img:cmd.image||null,internal:false,ts:now});
-  await DB.upd('tickets',ticketId,{updatedAt:now,unreadStudent:true,unreadAdmin:false,status:'In Bearbeitung'});closeModal();toast('Nachricht gesendet.');
 };
 
 window.sendApp=async()=>{
@@ -1777,10 +1846,10 @@ function profileView(){
   const tickets=S.myTickets.length, applications=S.myApps.length;
   const favs=[...(u.mediaState?.articlesFavorites||[]).map(id=>({kind:'articles',item:S.articles.find(x=>x.id===id)})),...(u.mediaState?.videosFavorites||[]).map(id=>({kind:'videos',item:S.videos.find(x=>x.id===id)}))].filter(x=>x.item);
   const favoritesMarkup=S.settings.mediaFavorites===false?'':`<section class="glass p-5 space-y-3"><h2 class="font-semibold">Meine Merkliste</h2>${favs.map(x=>`<div class="flex items-center justify-between gap-2 text-sm"><button class="text-left flex-1" onclick="${x.kind==='articles'?`openArtPage('${x.item.id}')`:`openVideo('${x.item.id}')`}">${esc(x.item.title)}</button><button class="btn2 !p-1.5" onclick="updateMediaState('${x.kind}','${x.item.id}','favorites')"><i data-lucide="x" class="w-3.5 h-3.5"></i></button></div>`).join('')||'<p class="text-xs opacity-60">Noch keine gemerkten Inhalte.</p>'}</section>`;
-  return `<div class="max-w-2xl mx-auto space-y-5">
-    <div class="space-y-1"><h1 class="text-2xl font-bold">Mein Profil</h1><p class="text-sm opacity-70">Dein persönlicher Bereich für Account und Einstellungen.</p></div>
+  return `<div class="max-w-[1800px] mx-auto"><section class="panel max-w-3xl mx-auto space-y-5">
+    <div class="space-y-1"><h1 class="text-2xl font-bold text-white">Mein Profil</h1><p class="text-sm text-white/75">Dein persönlicher Bereich für Account und Einstellungen.</p></div>
     <section class="glass p-5 flex items-center gap-3">
-      <div class="w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center"><i data-lucide="user-round" class="w-6 h-6"></i></div>
+      <div class="w-12 h-12 rounded-full bg-[#0a84ff] text-white flex items-center justify-center"><i data-lucide="user-round" class="w-6 h-6"></i></div>
       <div class="min-w-0"><div class="font-bold">${esc(u.name||'Schüler')}</div><div class="text-xs opacity-65 break-all">${esc(u.email||'')}</div><div class="text-xs opacity-65 mt-1">${esc(u.role||'Schüler')} · ${esc(u.klass||'Keine Klasse angegeben')}</div></div>
     </section>
     <section class="glass p-5 space-y-3">
@@ -1791,19 +1860,19 @@ function profileView(){
     ${favoritesMarkup}
     ${S.settings.profileExtras? `<section class="glass p-5 space-y-3">
       <h2 class="font-semibold">Einstellungen</h2>
-      ${S.settings.personalization? `<div class="flex items-center justify-between gap-3"><div><div class="text-sm font-medium">Dunkles Design</div><div class="text-xs opacity-60">Schont bei wenig Licht die Augen.</div></div><button class="btn2" onclick="togglePersonalTheme()">${document.documentElement.classList.contains('dark')?'Eingeschaltet':'Ausgeschaltet'}</button></div>`:'<p class="text-sm opacity-60">Personalisierung ist derzeit ausgeschaltet.</p>'}
+      ${S.settings.personalization? `<div class="flex items-center justify-between gap-3"><div><div class="text-sm font-medium">Dunkles Design</div><div class="text-xs opacity-60">Schont bei wenig Licht die Augen.</div></div><button type="button" class="btn2" onclick="togglePersonalTheme()">${document.documentElement.classList.contains('dark')?'Eingeschaltet':'Ausgeschaltet'}</button></div>`:'<p class="text-sm opacity-60">Personalisierung ist derzeit ausgeschaltet.</p>'}
       <div class="text-xs opacity-60">Weitere persönliche Einstellungen werden hier ergänzt, sobald die jeweiligen Funktionen verfügbar sind.</div>
     </section>`:''}
     ${S.settings.feedback&&S.settings.profileExtras? `<section class="glass p-5 space-y-3">
       <h2 class="font-semibold">Feedback abgeben</h2><p class="text-sm opacity-70">Ist etwas unklar oder hast du eine Idee? Schreib uns eine kurze Nachricht.</p>
       <textarea id="profile-feedback" rows="4" class="inp" maxlength="1500" placeholder="Deine Nachricht …"></textarea>
-      <button class="btn w-full" onclick="sendProfileFeedback()">Feedback senden</button>
+      <button type="button" class="btn w-full" onclick="sendProfileFeedback()">Feedback senden</button>
     </section>`:''}
     <section class="glass p-5 space-y-3">
       <h2 class="font-semibold">Abmelden</h2><p class="text-xs opacity-65">Du bleibst normalerweise angemeldet. Melde dich nur ab, wenn du es wirklich möchtest.</p>
-      <button class="btn2 !text-rose-500" onclick="confirmLogout()">${ic('logout','w-5 h-5')}Abmelden</button>
+      <button type="button" class="btn2 !text-rose-400" onclick="confirmLogout()">${ic('logout','w-5 h-5')}Abmelden</button>
     </section>
-  </div>`;
+  </section></div>`;
 }
 window.togglePersonalTheme=async()=>{
   const dark=!document.documentElement.classList.contains('dark');
@@ -1860,7 +1929,7 @@ window.switchAdminTab=(key)=>{
       const box=document.createElement('div');
       box.id='admin-tab-error';
       box.className='mx-auto my-4 max-w-5xl rounded-xl border border-rose-500 bg-rose-500/10 p-4 text-sm text-rose-700';
-      box.textContent='Fehler beim Öffnen dieses Admin-Bereichs ('+key+'): '+(err?.message||String(err))+'. Bitte diese Meldung an ChatGPT weitergeben.';
+      box.textContent='Fehler beim Öffnen dieses Admin-Bereichs ('+key+'): '+(err?.message||String(err))+'. Bitte wende dich an das Admin-Team.';
       host.prepend(box);
     }
     return;
@@ -1875,16 +1944,16 @@ function adminView(){
   const nApps=S.apps.filter(a=>a.status=='Offen').length;
   const nClaimed=S.user.role==='Admin'?claimedTickets().length:0;
   const nSecurity=S.securityIPs.filter(x=>x.decision==='review'||x.decision==='blocked').length;
-  return `<div class="space-y-6 max-w-5xl mx-auto">
+  return `<div class="max-w-[1800px] mx-auto"><section class="panel space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-bold flex items-center gap-2"><i data-lucide="shield" class="text-blue-600"></i>Admin-Terminal</h1>
-      <span class="text-xs px-3 py-1 rounded-full bg-blue-500/15 text-blue-500 font-semibold">Angemeldet als ${esc(S.user.name)} (${esc(S.user.role)})</span>
+      <h1 class="text-2xl font-bold text-white flex items-center gap-2"><i data-lucide="shield" class="text-[#0a84ff]"></i>Admin-Terminal</h1>
+      <span class="text-xs px-3 py-1 rounded-full bg-[#0a84ff]/20 text-[#8ac4ff] border border-[#0a84ff]/30 font-semibold">Angemeldet als ${esc(S.user.name)} (${esc(S.user.role)})</span>
     </div>
-    <div class="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
-      ${TABS.filter(x=>S.user.role==='Admin'||!ADMIN_ONLY_TABS.includes(x[0])).map(([k,i,l])=>`<button class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="switchAdminTab('${k}')"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}${k=='claimed'&&nClaimed?` (${nClaimed})`:''}${k=='security'&&nSecurity?` (${nSecurity})`:''}</button>`).join('')}
+    <div class="flex flex-wrap gap-1.5 border-b border-white/15 pb-3">
+      ${TABS.filter(x=>S.user.role==='Admin'||!ADMIN_ONLY_TABS.includes(x[0])).map(([k,i,l])=>`<button type="button" class="tab !text-xs sm:!text-sm ${S.adminTab==k?'on':''}" onclick="switchAdminTab('${k}')"><i data-lucide="${i}" class="w-4 h-4 inline mr-1"></i>${l}${k=='tickets'&&nNew?` (${nNew})`:''}${k=='apps'&&nApps?` (${nApps})`:''}${k=='claimed'&&nClaimed?` (${nClaimed})`:''}${k=='security'&&nSecurity?` (${nSecurity})`:''}</button>`).join('')}
     </div>
     ${adminTabs[S.adminTab]()}
-  </div>`;
+  </section></div>`;
 }
 
 const toggleRow=(k,l,d)=>`<div class="glass p-4 flex items-center justify-between gap-4">
@@ -1971,11 +2040,11 @@ function securityAdminView(){
   const overrides=S.securityOverrides||[],blocked=S.securityBlockedAccounts||[];
   const ipState=ip=>overrides.find(x=>x.ip_address===ip)?.decision;
   return `<div class="space-y-4">
-    <div class="glass p-4 flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-bold">IP-Adressen & Sicherheitsprotokoll</h3><p class="text-xs opacity-70 mt-1">Account-Zuordnung bei Anmeldung; ohne Anmeldung wird der Zugriff als anonym protokolliert.</p></div><div class="flex gap-2"><button class="btn2 !text-rose-500" onclick="clearSecurityLog()"><i data-lucide="trash-2" class="w-4 h-4"></i>Clean – alle IPs löschen</button><button class="btn" onclick="loadSecurityIPs()" ${S.securityLoading?'disabled':''}>${S.securityLoading?'Lädt…':'Aktualisieren'}</button></div></div>
-    ${S.securitySetupRequired?'<div class="glass p-3 text-sm text-amber-600">Die zusätzlichen Sicherheits-Tabellen müssen noch in D1 angelegt werden. Bis dahin wird die bisherige IP-Liste angezeigt.</div>':''}
-    <div class="glass p-4"><div class="font-semibold mb-2">Manuelle IP-Freigabe oder Sperre</div><div class="flex flex-wrap gap-2"><input id="security-ip-manual" class="inp flex-1 min-w-[180px]" placeholder="IP-Adresse"><button class="btn" onclick="securityAction('allow_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP freigeben</button><button class="btn2 !text-rose-500" onclick="securityAction('block_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP sperren</button></div></div>
-    <div class="glass p-4"><div class="font-semibold mb-2">Gesperrte Accounts (${blocked.length})</div>${blocked.length?blocked.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t py-2 text-sm"><span><b>${esc(x.account_name||'Account')}</b> · ${esc(x.email||x.uid)}</span><button class="btn2" onclick="securityAction('unban_account',{uid:'${esc(x.uid)}'})">Entsperren</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Accounts.</p>'}<div class="font-semibold mt-4 mb-2">Gesperrte Geräte (${(S.securityBlockedDevices||[]).length})</div>${(S.securityBlockedDevices||[]).length?S.securityBlockedDevices.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t py-2 text-xs"><span class="font-mono">${esc(x.device_id)}</span><button class="btn2" onclick="securityAction('unban_device',{targetDeviceId:'${esc(x.device_id)}'})">Gerät freigeben</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Geräte.</p>'}</div>
-    <div class="glass overflow-hidden"><div class="p-4 font-semibold">Letzte Zugriffe (${items.length})</div>${S.securityLoading?'<div class="p-4">Lädt…</div>':items.length?`<div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100 dark:bg-slate-800"><tr><th class="p-3">IP-Adresse</th><th class="p-3">Account</th><th class="p-3">Land</th><th class="p-3">Ereignis</th><th class="p-3">Zeitpunkt</th><th class="p-3">Aktionen</th></tr></thead><tbody>${items.map(x=>{const ip=String(x.ip_address||''),uid=String(x.uid||''),manual=ipState(ip),suspicious=x.decision==='blocked'||x.decision==='review';const account=x.account_name||(x.uid?'Account erkannt – Zuordnung fehlt':'Anonym – kein Account angemeldet');return `<tr class="border-t border-slate-200 dark:border-slate-700 ${suspicious?'bg-rose-500/15 text-rose-700 dark:text-rose-300 font-semibold':''}"><td class="p-3 font-mono">${suspicious?'<span class="block text-[10px] uppercase tracking-wider text-rose-600 dark:text-rose-300">⚠ Verdächtig</span>':''}${esc(ip)}${x.access_count>1?'<div class="text-[10px] opacity-70">'+x.access_count+' Zugriffe zusammengefasst</div>':''}</td><td class="p-3">${esc(account)}${x.email?'<br>'+esc(x.email):''}</td><td class="p-3">${esc(x.country_name||'')} (${esc(x.country_code||'')})</td><td class="p-3">${esc(x.event_type||x.last_event_type||'Zugriff')} · ${esc(manual||x.decision||'')}${suspicious?'<br><b class="text-rose-600 dark:text-rose-300">VERDÄCHTIGER ZUGRIFF</b>':''}</td><td class="p-3 whitespace-nowrap">${fmt(Date.parse(x.created_at||x.last_seen))}</td><td class="p-3"><div class="flex flex-wrap gap-1">${manual==='allowed'?'<button class="btn2" onclick="securityAction(\'unban_ip\',{ip:\''+esc(ip)+'\'})">Freigabe aufheben</button>':'<button class="btn2" onclick="securityAction(\'allow_ip\',{ip:\''+esc(ip)+'\'})">Freigeben</button>'}<button class="btn2 !text-rose-500" onclick="securityAction('block_ip',{ip:'${esc(ip)}'})">Sperren</button>${uid?`<button class="btn2 !text-rose-500" onclick="securityAction('block_account',{uid:'${esc(uid)}',email:'${esc(x.email||'')}',accountName:'${esc(x.account_name||'')}'})">Account sperren</button>`:''}${x.device_id?`<button class="btn2 !text-rose-500" onclick="securityAction('block_device',{targetDeviceId:'${esc(x.device_id)}'})">Gerät sperren</button>`:''}</div></td></tr>`}).join('')}</tbody></table></div>`:'<div class="p-4 text-sm opacity-70">Noch keine Zugriffe gespeichert.</div>'}</div>
+    <div class="glass p-4 flex flex-wrap items-center justify-between gap-3"><div><h3 class="font-bold">IP-Adressen & Sicherheitsprotokoll</h3><p class="text-xs opacity-70 mt-1">Account-Zuordnung bei Anmeldung; ohne Anmeldung wird der Zugriff als anonym protokolliert.</p></div><div class="flex gap-2"><button type="button" class="btn2 !text-rose-400" onclick="clearSecurityLog()"><i data-lucide="trash-2" class="w-4 h-4"></i>Clean – alle IPs löschen</button><button type="button" class="btn" onclick="loadSecurityIPs()" ${S.securityLoading?'disabled':''}>${S.securityLoading?'Lädt…':'Aktualisieren'}</button></div></div>
+    ${S.securitySetupRequired?'<div class="glass p-3 text-sm text-amber-300">Die zusätzlichen Sicherheits-Tabellen müssen noch in D1 angelegt werden. Bis dahin wird die bisherige IP-Liste angezeigt.</div>':''}
+    <div class="glass p-4"><div class="font-semibold mb-2">Manuelle IP-Freigabe oder Sperre</div><div class="flex flex-wrap gap-2"><input id="security-ip-manual" class="inp flex-1 min-w-[180px]" placeholder="IP-Adresse"><button type="button" class="btn" onclick="securityAction('allow_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP freigeben</button><button type="button" class="btn2 !text-rose-400" onclick="securityAction('block_ip',{ip:document.getElementById('security-ip-manual').value.trim()})">IP sperren</button></div></div>
+    <div class="glass p-4"><div class="font-semibold mb-2">Gesperrte Accounts (${blocked.length})</div>${blocked.length?blocked.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t border-white/10 py-2 text-sm"><span><b>${esc(x.account_name||'Account')}</b> · ${esc(x.email||x.uid)}</span><button type="button" class="btn2" data-uid="${esc(x.uid)}" onclick="securityAction('unban_account',{uid:this.dataset.uid})">Entsperren</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Accounts.</p>'}<div class="font-semibold mt-4 mb-2">Gesperrte Geräte (${(S.securityBlockedDevices||[]).length})</div>${(S.securityBlockedDevices||[]).length?S.securityBlockedDevices.map(x=>`<div class="flex flex-wrap justify-between gap-2 border-t border-white/10 py-2 text-xs"><span class="font-mono">${esc(x.device_id)}</span><button type="button" class="btn2" data-device="${esc(x.device_id)}" onclick="securityAction('unban_device',{targetDeviceId:this.dataset.device})">Gerät freigeben</button></div>`).join(''):'<p class="text-xs opacity-60">Keine gesperrten Geräte.</p>'}</div>
+    <div class="glass overflow-hidden"><div class="p-4 font-semibold">Letzte Zugriffe (${items.length})</div>${S.securityLoading?'<div class="p-4">Lädt…</div>':items.length?`<div class="overflow-x-auto"><table class="w-full text-xs text-left"><thead class="bg-slate-100 dark:bg-slate-800"><tr><th class="p-3">IP-Adresse</th><th class="p-3">Account</th><th class="p-3">Land</th><th class="p-3">Ereignis</th><th class="p-3">Zeitpunkt</th><th class="p-3">Aktionen</th></tr></thead><tbody>${items.map(x=>{const ip=String(x.ip_address||''),uid=String(x.uid||''),dev=String(x.device_id||''),manual=ipState(ip),suspicious=x.decision==='blocked'||x.decision==='review';const account=x.account_name||(x.uid?'Account erkannt – Zuordnung fehlt':'Anonym – kein Account angemeldet');return `<tr class="border-t border-slate-200 dark:border-slate-700 ${suspicious?'bg-rose-500/15 text-rose-700 dark:text-rose-300 font-semibold':''}"><td class="p-3 font-mono">${suspicious?'<span class="block text-[10px] uppercase tracking-wider text-rose-600 dark:text-rose-300">⚠ Verdächtig</span>':''}${esc(ip)}${x.access_count>1?'<div class="text-[10px] opacity-70">'+x.access_count+' Zugriffe zusammengefasst</div>':''}</td><td class="p-3">${esc(account)}${x.email?'<br>'+esc(x.email):''}</td><td class="p-3">${esc(x.country_name||'')} (${esc(x.country_code||'')})</td><td class="p-3">${esc(x.event_type||x.last_event_type||'Zugriff')} · ${esc(manual||x.decision||'')}${suspicious?'<br><b class="text-rose-600 dark:text-rose-300">VERDÄCHTIGER ZUGRIFF</b>':''}</td><td class="p-3 whitespace-nowrap">${fmt(Date.parse(x.created_at||x.last_seen))}</td><td class="p-3"><div class="flex flex-wrap gap-1">${manual==='allowed'?`<button type="button" class="btn2" data-ip="${esc(ip)}" onclick="securityAction('unban_ip',{ip:this.dataset.ip})">Freigabe aufheben</button>`:`<button type="button" class="btn2" data-ip="${esc(ip)}" onclick="securityAction('allow_ip',{ip:this.dataset.ip})">Freigeben</button>`}<button type="button" class="btn2 !text-rose-400" data-ip="${esc(ip)}" onclick="securityAction('block_ip',{ip:this.dataset.ip})">Sperren</button>${uid?`<button type="button" class="btn2 !text-rose-400" data-uid="${esc(uid)}" data-email="${esc(x.email||'')}" data-name="${esc(x.account_name||'')}" onclick="securityAction('block_account',{uid:this.dataset.uid,email:this.dataset.email,accountName:this.dataset.name})">Account sperren</button>`:''}${dev?`<button type="button" class="btn2 !text-rose-400" data-device="${esc(dev)}" onclick="securityAction('block_device',{targetDeviceId:this.dataset.device})">Gerät sperren</button>`:''}</div></td></tr>`}).join('')}</tbody></table></div>`:'<div class="p-4 text-sm opacity-70">Noch keine Zugriffe gespeichert.</div>'}</div>
     <p class="text-xs opacity-60">IP-Freigaben gelten unabhängig von der Länderregel. Eine Account-Sperre folgt dem Account; eine Gerätesperre nutzt eine Kennung im Local Storage und ist durch Löschen der Browserdaten umgehbar.</p>
   </div>`;
 }
@@ -2141,14 +2210,14 @@ const adminTabs={
       <div class="glass p-5 space-y-4">
         <h3 class="font-bold text-base">Design & Darstellung</h3>
         <div class="flex items-center gap-3">
-          ${S.settings.logo?`<img src="${S.settings.logo}" class="w-12 h-12 rounded-xl object-contain border border-slate-500/30">`:`<div class="w-12 h-12 rounded-xl bg-slate-500/10 flex items-center justify-center text-xs opacity-50">Kein Logo</div>`}
+          ${safeImgSrc(S.settings.logo)?`<img src="${esc(safeImgSrc(S.settings.logo))}" class="w-12 h-12 rounded-xl object-contain border border-slate-500/30">`:`<div class="w-12 h-12 rounded-xl bg-slate-500/10 flex items-center justify-center text-xs opacity-50">Kein Logo</div>`}
           <label class="btn2"><i data-lucide="upload" class="w-4 h-4"></i>Logo hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'logo',300)"></label>
-          ${S.settings.logo?`<button class="btn2 !text-rose-500" onclick="setSet('logo','')">Entfernen</button>`:''}
+          ${S.settings.logo?`<button type="button" class="btn2 !text-rose-400" onclick="setSet('logo','')">Entfernen</button>`:''}
         </div>
         <div class="flex items-center gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-          ${S.settings.bg?`<img src="${S.settings.bg}" class="w-16 h-10 rounded-lg object-cover border border-slate-500/30">`:`<div class="w-16 h-10 rounded-lg bg-slate-500/10 flex items-center justify-center text-xs opacity-50">Standard</div>`}
+          ${safeImgSrc(S.settings.bg)?`<img src="${esc(safeImgSrc(S.settings.bg))}" class="w-16 h-10 rounded-lg object-cover border border-slate-500/30">`:`<div class="w-16 h-10 rounded-lg bg-slate-500/10 flex items-center justify-center text-xs opacity-50">Standard</div>`}
           <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Hintergrundbild<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'bg',1400)"></label>
-          ${S.settings.bg?`<button class="btn2 !text-rose-500" onclick="setSet('bg','')">Entfernen</button>`:''}
+          ${S.settings.bg?`<button type="button" class="btn2 !text-rose-400" onclick="setSet('bg','')">Entfernen</button>`:''}
         </div>
       </div>
     </div>
@@ -2158,19 +2227,19 @@ const adminTabs={
     <h3 class="font-bold text-base">Passwort-Zurücksetzen-Modul</h3>
     <p class="text-xs opacity-70">Schüler klicken oben auf den Schlüssel, wählen die App und es entsteht ein Ticket, das nur Admins sehen und übernehmen können. Der Admin nutzt im Chat den Befehl <code>/passwort</code>.</p>
     ${toggleRow('passwordSupport','Passwort-Zurücksetzen aktiv','Zeigt Schülern oben den Schlüssel-Button')}
-    <div class="glass p-5 space-y-2">
+    <div class="glass p-5 space-y-2.5">
       <div class="text-sm font-semibold">Apps zur Auswahl (eine pro Zeile)</div>
       <textarea id="password-platforms" rows="5" class="inp" placeholder="Untis&#10;Schulportal">${esc(passwordPlatforms().join('\n'))}</textarea>
-      <button class="btn2" onclick="savePasswordPlatforms()">Liste speichern</button>
+      <button type="button" class="btn" onclick="savePasswordPlatforms()">Liste speichern</button>
     </div>
     <div class="glass p-5 space-y-3">
       <div class="text-sm font-semibold">Anleitung, die mit /passwort verschickt wird</div>
       <textarea id="pw-guide-text" rows="5" class="inp" placeholder="Schritt-für-Schritt-Anleitung zum Anmelden mit dem neuen Passwort…">${esc(S.settings.pwGuideText||'')}</textarea>
-      <button class="btn2" onclick="savePwGuideText()">Text speichern</button>
+      <button type="button" class="btn" onclick="savePwGuideText()">Text speichern</button>
       <div class="flex items-center gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-        ${S.settings.pwGuideImage?`<img src="${S.settings.pwGuideImage}" class="h-20 rounded-lg border border-slate-500/30">`:'<div class="text-xs opacity-60">Noch kein Bild</div>'}
+        ${safeImgSrc(S.settings.pwGuideImage)?`<img src="${esc(safeImgSrc(S.settings.pwGuideImage))}" class="h-20 rounded-lg border border-slate-500/30">`:'<div class="text-xs opacity-60">Noch kein Bild</div>'}
         <label class="btn2"><i data-lucide="image" class="w-4 h-4"></i>Bild hochladen<input type="file" accept="image/*" hidden onchange="uploadAsset(this,'pwGuideImage',1000)"></label>
-        ${S.settings.pwGuideImage?`<button class="btn2 !text-rose-500" onclick="setSet('pwGuideImage','')">Entfernen</button>`:''}
+        ${S.settings.pwGuideImage?`<button type="button" class="btn2 !text-rose-400" onclick="setSet('pwGuideImage','')">Entfernen</button>`:''}
       </div>
     </div>
     <p class="text-xs opacity-70"><b>Ende-zu-Ende-Verschlüsselung aktiv:</b> Zugangsdaten werden im Browser des Admins mit RSA-OAEP + AES-256-GCM verschlüsselt, bevor sie in <b>ticketPasswords</b> landen. In Firebase liegt niemals Klartext; nur der Schüler kann die Daten im Chat mit seinem Medienscouts-Passwort entschlüsseln und anschließend sofort löschen (oder sie laufen nach 3 Tagen via <code>expiresAt</code>-TTL ab).</p>
@@ -2247,12 +2316,12 @@ const adminTabs={
     </div>
     ${deskTickets().map(t=>`<div class="glass p-4 flex items-center justify-between gap-3 flex-wrap">
       <button type="button" onclick="openChat('${t.id}',true)" class="flex-1 text-left flex items-center gap-3 cursor-pointer min-w-[240px]">
-        ${t.unreadAdmin?`<span class="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0 pointer-events-none" title="Neue Nachricht"></span>`:''}
+        ${t.unreadAdmin?`<span class="w-2.5 h-2.5 rounded-full bg-[#0a84ff] shrink-0 pointer-events-none" title="Neue Nachricht"></span>`:''}
         <div class="pointer-events-none">
           <div class="font-bold text-sm flex items-center gap-2 flex-wrap">
             <span>${esc(t.subject||t.category)}</span>
             ${t.passwordReset?'<span class="text-[10px] px-2 py-0.5 rounded bg-rose-600 text-white">🔴 Passwort-Ticket</span>':''}
-            ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-500 font-semibold">🔒 E2EE</span>':''}
+            ${t.passwordReset&&t.e2eePublicKey?'<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-400 font-semibold">🔒 E2EE</span>':''}
             ${t.reopened?'<span class="text-[10px] px-2 py-0.5 rounded bg-amber-500 text-white">Wieder geöffnet</span>':''}
             ${badge(t.status)}
             <span class="text-xs px-2 py-0.5 rounded bg-slate-500/15">${t.assignedName?'Betreut von: '+esc(t.assignedName):'Unzugewiesen'}</span>
@@ -2261,9 +2330,9 @@ const adminTabs={
         </div>
       </button>
       <div class="flex items-center gap-2">
-        ${t.assignedUid!=S.user.uid?`<button type="button" class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>`:''}
-        <button type="button" class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Vollbild-Chat</button>
-        ${S.user.role==='Admin'?`<button type="button" class="btn2 !text-rose-500" onclick="delItem('tickets','${t.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`:''}
+        ${t.assignedUid!=S.user.uid?`<button type="button" class="btn2 !text-[#66b8ff]" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>`:''}
+        <button type="button" class="btn !py-1.5 !px-3 !text-xs" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>Vollbild-Chat</button>
+        ${S.user.role==='Admin'?`<button type="button" class="btn2 !text-rose-400" onclick="delItem('tickets','${t.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`:''}
       </div>
     </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine Tickets vorhanden.</div>'}
   </div>`,
@@ -2276,8 +2345,8 @@ const adminTabs={
         <div class="text-xs opacity-70 mt-1">Schüler: <b>${esc(t.userName||'Schüler')}</b> (${esc(t.userEmail||'-')}) · ${esc(t.category)} · ${fmt(t.updatedAt||t.createdAt)}</div>
       </div>
       <div class="flex items-center gap-2">
-        <button type="button" class="btn2 !text-blue-500" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>
-        <button type="button" class="btn2" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-4 h-4"></i>Chat ansehen</button>
+        <button type="button" class="btn2 !text-[#66b8ff]" onclick="claimTicket('${t.id}')"><i data-lucide="hand" class="w-4 h-4"></i>Übernehmen</button>
+        <button type="button" class="btn !py-1.5 !px-3 !text-xs" onclick="openChat('${t.id}',true)"><i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>Chat ansehen</button>
       </div>
     </div>`).join('')||'<div class="glass p-8 text-center opacity-60">Keine beanspruchten Tickets.</div>'}
   </div>`,
@@ -2352,9 +2421,9 @@ const adminTabs={
           <span class="text-xs font-bold ${b.type=='Fundsache'?'text-amber-500':'text-emerald-500'}">${esc(b.type)}</span>
           <div class="font-bold text-sm">${esc(b.title)}</div>
           <div class="text-xs opacity-70">${esc(b.text)}</div>
-          ${b.img?`<img src="${b.img}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-32 cursor-zoom-in">`:''}
+          ${safeImgSrc(b.img)?`<img src="${esc(safeImgSrc(b.img))}" onclick="zoom(this.src)" class="mt-2 rounded-lg max-h-32 cursor-zoom-in">`:''}
         </div>
-        <button class="btn2 !text-rose-500" onclick="delItem('board','${b.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+        <button type="button" class="btn2 !text-rose-400" onclick="delItem('board','${b.id}')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
       </div>`).join('')||`<div class="glass p-8 text-center opacity-60">Keine Einträge vorhanden.</div>`}
     </div>
   </div>`,
@@ -2444,19 +2513,19 @@ window.loadSurveyResults=sid=>{
   const sv=S.surveys.find(x=>x.id==sid);if(!sv)return;
   S.activeResultSurvey=sv;S.surveyResults=[];
   S.unsubSurveyResp&&S.unsubSurveyResp();
-  S.unsubSurveyResp=DB.surveyResp(sid,res=>{S.surveyResults=res;render()});
+  S.unsubSurveyResp=DB.surveyResp(sid,res=>{S.surveyResults=res;liveRender()});
   render();
 };
 
 function renderSurveyEvaluation(){
   const sv=S.activeResultSurvey,res=S.surveyResults||[];
-  return `<div class="glass p-5 space-y-4 border-2 border-blue-500/40">
+  return `<div class="glass p-5 space-y-4 border-2 border-[#0a84ff]/40">
     <div class="flex items-center justify-between flex-wrap gap-2">
       <div>
         <h4 class="font-bold text-lg">Auswertung: ${esc(sv.title)}</h4>
         <div class="text-xs opacity-70">${res.length} abgegebene Stimmen</div>
       </div>
-      <button class="btn" onclick="exportSurveyCsv()"><i data-lucide="download" class="w-4 h-4"></i>Als Excel-CSV herunterladen</button>
+      <button type="button" class="btn" onclick="exportSurveyCsv()"><i data-lucide="download" class="w-4 h-4"></i>Als Excel-CSV herunterladen</button>
     </div>
 
     <div class="space-y-4">
@@ -2470,7 +2539,7 @@ function renderSurveyEvaluation(){
                 const n=counts[opt]||0,pct=res.length?Math.round((n/res.length)*100):0;
                 return `<div class="text-xs space-y-1">
                   <div class="flex justify-between"><span>${esc(opt)}</span><b>${n} (${pct}%)</b></div>
-                  <div class="w-full h-2 rounded-full bg-slate-500/20 overflow-hidden"><div class="h-full bg-blue-600" style="width:${pct}%"></div></div>
+                  <div class="w-full h-2 rounded-full bg-slate-500/20 overflow-hidden"><div class="h-full bg-[#0a84ff]" style="width:${pct}%"></div></div>
                 </div>`;
               }).join('')
             : `<div class="text-xs space-y-1 max-h-32 overflow-auto">${res.map(r=>r.answers?.[q.id]?`<div class="p-1.5 rounded bg-white/50 dark:bg-slate-800"><b>${esc(r.userName)} (${esc(r.klass)}):</b> ${esc(r.answers[q.id])}</div>`:'').join('')||'Keine Freitext-Antworten'}</div>`}
@@ -2535,9 +2604,9 @@ window.acceptApplicant=async(appId,uid)=>{
 window.delItem=async(c,id)=>{if(confirm('Diesen Eintrag wirklich löschen?'))await DB.del(c,id)};
 window.previewMediaDraft=kind=>{
   if(kind==='videos'){
-    const id=ytId(val('v-url')),title=val('v-title'),desc=val('v-desc');
+    const id=safeYtId(ytId(val('v-url'))),title=val('v-title'),desc=val('v-desc');
     if(!id||!title)return toast('Bitte gültigen YouTube-Link und Titel eingeben.');
-    modal(`<div class="space-y-4"><div class="flex justify-between items-center gap-3"><div class="flex items-center gap-2.5">${ic('video','w-7 h-7')}<h2 class="font-bold text-lg">Video-Vorschau</h2></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="aspect-video bg-black rounded-2xl overflow-hidden border border-white/15"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${id}" allowfullscreen></iframe></div><h3 class="font-bold text-xl">${esc(title)}</h3><p class="text-sm opacity-80 whitespace-pre-wrap">${esc(desc)}</p></div>`);
+    modal(`<div class="space-y-4"><div class="flex justify-between items-center gap-3"><div class="flex items-center gap-2.5">${ic('video','w-7 h-7')}<h2 class="font-bold text-lg">Video-Vorschau</h2></div><button type="button" class="lg-close" onclick="closeModal()" aria-label="Schließen"><i data-lucide="x" class="w-4 h-4"></i></button></div><div class="aspect-video bg-black rounded-2xl overflow-hidden border border-white/15"><iframe class="w-full h-full" src="https://www.youtube-nocookie.com/embed/${esc(id)}" allowfullscreen></iframe></div><h3 class="font-bold text-xl">${esc(title)}</h3><p class="text-sm opacity-80 whitespace-pre-wrap">${esc(desc)}</p></div>`);
     const panel=$('#modal .max-w-xl');if(panel)panel.classList.replace('max-w-xl','max-w-4xl');
   }else{
     const title=val('a-title'),body=val('a-body');
